@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: media_manager
+Version: 0.1.0
+Requires-Dist: click
+Requires-Dist: pyyaml
+Requires-Dist: aria2p[tui]
+Requires-Dist: guessit
+Requires-Dist: cinemagoer
+Dynamic: requires-dist

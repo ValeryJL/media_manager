@@ -1,0 +1,5 @@
+click
+pyyaml
+aria2p[tui]
+guessit
+cinemagoer
