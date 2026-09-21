@@ -6,9 +6,23 @@ from .organizer import organize_downloads
 from .downloader import add_download
 
 @click.group(invoke_without_command=True)
+@click.option('-f', '--file', 'file_input', type=str, help='Path to a .torrent file or magnet link to download.')
 @click.pass_context
-def cli(ctx):
+def cli(ctx, file_input):
     """Media Manager CLI: Search, Download, and Organize your media automatically."""
+    if file_input:
+        config = load_config()
+        dl_path = config["download_path"]
+        from rich.console import Console
+        console = Console()
+        console.print(f"Adding download to [cyan]{dl_path}[/]...")
+        try:
+            add_download(file_input, dl_path)
+            console.print("[bold green]✓ Download added successfully to detached aria2 daemon.[/]")
+        except Exception as e:
+            console.print(f"[bold red]Error adding download:[/] {e}")
+        return
+
     if ctx.invoked_subcommand is None:
         # No command was passed, show the main interactive menu
         import questionary
@@ -21,6 +35,7 @@ def cli(ctx):
             "What would you like to do?",
             choices=[
                 questionary.Choice("🔍 Search for Media", value="search"),
+                questionary.Choice("🧲 Add Magnet Link / Torrent File", value="add"),
                 questionary.Choice("📊 View Active Downloads", value="status"),
                 questionary.Choice("📁 Organize Downloads Manually", value="organize"),
                 questionary.Choice("❌ Exit", value="exit")
@@ -42,6 +57,10 @@ def cli(ctx):
             query = questionary.text("Enter your search query:").ask()
             if query:
                 ctx.invoke(search, query=(query,))
+        elif action == "add":
+            target = questionary.text("Enter magnet link or path to .torrent file:").ask()
+            if target:
+                ctx.invoke(download, uri=target)
         elif action == "status":
             ctx.invoke(status)
         elif action == "organize":
@@ -77,20 +96,25 @@ def search(ctx, query):
 @cli.command()
 @click.argument('uri')
 def download(uri):
-    """Hidden command used by pirate-get to add a download."""
+    """Command to add a download (magnet link, URL, or .torrent file)."""
     config = load_config()
     dl_path = config["download_path"]
     
     click.echo(f"Adding download to {dl_path}...")
-    add_download(uri, dl_path)
-    click.echo("Download added to detached aria2 daemon.")
+    try:
+        add_download(uri, dl_path)
+        click.echo("Download added to detached aria2 daemon.")
+    except Exception as e:
+        click.echo(f"Error adding download: {e}")
 
 @cli.command()
 def status():
     """Show the current download status."""
+    from .tui import get_binary_path
+    aria2p_bin = get_binary_path("aria2p")
     try:
         # Launch aria2p TUI (top-like interface)
-        subprocess.run(["aria2p"])
+        subprocess.run([aria2p_bin])
     except FileNotFoundError:
         click.echo("Error: aria2p is not installed.")
 

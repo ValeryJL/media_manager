@@ -1,5 +1,9 @@
 import subprocess
 import json
+import os
+import shutil
+import sys
+from pathlib import Path
 import questionary
 from rich.console import Console
 from rich.table import Table
@@ -7,13 +11,24 @@ from rich.text import Text
 
 console = Console()
 
+def get_binary_path(name: str) -> str:
+    """Find binary in the same environment/directory as sys.executable, or fallback to PATH."""
+    venv_bin = Path(sys.executable).parent / name
+    if venv_bin.exists() and os.access(venv_bin, os.X_OK):
+        return str(venv_bin)
+    found = shutil.which(name)
+    if found:
+        return found
+    return name
+
 def search_interactive(query_str: str) -> str:
     """Runs pirate-get in JSON mode, displays a rich table, and returns the chosen magnet link."""
+    pirate_bin = get_binary_path("pirate-get")
     with console.status(f"[bold green]Searching for '{query_str}'..."):
         try:
             # -j for JSON output. We don't use -C here because we'll handle the output manually
             result = subprocess.run(
-                ["pirate-get", query_str, "-j"],
+                [pirate_bin, query_str, "-j"],
                 capture_output=True,
                 text=True,
                 check=True
@@ -24,6 +39,10 @@ def search_interactive(query_str: str) -> str:
         except FileNotFoundError:
             console.print("[bold red]Error: pirate-get is not installed or not in PATH.[/]")
             return None
+
+    if not result.stdout or not result.stdout.strip():
+        console.print("[bold yellow]No torrents found for your query.[/]")
+        return None
 
     try:
         data = json.loads(result.stdout)
@@ -75,7 +94,7 @@ def search_interactive(query_str: str) -> str:
         console.print("[bold red]No valid torrents with magnet links found.[/]")
         return None
         
-    choices.append(questionary.Choice(title="❌ Cancel", value=None))
+    choices.append(questionary.Choice(title="❌ Cancel", value="__cancel__"))
 
     selected_magnet = questionary.select(
         "Select a torrent to download:",
@@ -94,5 +113,8 @@ def search_interactive(query_str: str) -> str:
         ]),
         use_indicator=True
     ).ask()
+
+    if not selected_magnet or selected_magnet == "__cancel__":
+        return None
 
     return selected_magnet

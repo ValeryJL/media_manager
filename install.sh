@@ -23,10 +23,12 @@ echo "Installing pirate-get and media-manager inside venv..."
 "$VENV_DIR/bin/pip" install pirate-get
 "$VENV_DIR/bin/pip" install -e .
 
-# Create symlink in user's local bin so it's accessible without the venv path
-echo "Adding symlink to $HOME/.local/bin..."
+# Create symlinks in user's local bin so they are accessible without the venv path
+echo "Adding symlinks to $HOME/.local/bin..."
 mkdir -p "$HOME/.local/bin"
 ln -sf "$VENV_DIR/bin/media-manager" "$HOME/.local/bin/media-manager"
+ln -sf "$VENV_DIR/bin/pirate-get" "$HOME/.local/bin/pirate-get"
+ln -sf "$VENV_DIR/bin/aria2p" "$HOME/.local/bin/aria2p"
 
 # Check if ~/.local/bin is in PATH
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then

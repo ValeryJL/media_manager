@@ -34,13 +34,26 @@ media-manager search "Query de búsqueda"
 ```
 Abrirá la interfaz de `pirate-get` para buscar torrents. Al elegir uno, se enviará el enlace magnet o torrent automáticamente al daemon de `aria2c` bajo la ruta de descargas (en modo *detached*).
 
-### 2. Ver estado de descargas
+### 2. Pegar enlaces Magnet o abrir archivos .torrent
+Puedes agregar descargas directamente indicando la opción `-f` o el comando `download`:
+```bash
+# Mediante la opción -f (archivos .torrent o enlaces magnet)
+media-manager -f archivo.torrent
+media-manager -f "magnet:?xt=urn:btih:..."
+
+# O mediante el comando download
+media-manager download "magnet:?xt=urn:btih:..."
+media-manager download archivo.torrent
+```
+También puedes seleccionar la opción **🧲 Add Magnet Link / Torrent File** en el menú interactivo al ejecutar `media-manager` sin argumentos.
+
+### 3. Ver estado de descargas
 ```bash
 media-manager status
 ```
 Abre la interfaz TUI de `aria2p` (similar a `top`) para ver el progreso de los archivos que se están descargando.
 
-### 3. Organizar las descargas
+### 4. Organizar las descargas
 ```bash
 media-manager organize
 ```

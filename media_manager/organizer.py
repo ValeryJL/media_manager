@@ -13,11 +13,55 @@ SUB_EXTENSIONS = {".srt", ".sub", ".ass", ".vtt"}
 # Regex to strip trailing SxxE / Sxx / Exx tokens that guessit sometimes leaves in titles
 _SE_TRAIL_RE = re.compile(r'\s+[Ss]\d+[Ee]?\d*$|\s+[Ee]\d+$', re.IGNORECASE)
 
-def sanitize_title(title: str) -> str:
+def extract_single_value(val, default=None):
+    if isinstance(val, (list, tuple)):
+        return val[0] if val else default
+    return val if val is not None else default
+
+def sanitize_title(title) -> str:
     """Remove stray S01E-style fragments from a guessit-parsed title."""
     if not title:
-        return title
-    return _SE_TRAIL_RE.sub('', title).strip()
+        return ""
+    if isinstance(title, (list, tuple)):
+        title = title[0]
+    title_str = str(title).strip()
+    return _SE_TRAIL_RE.sub('', title_str).strip()
+
+def guess_media_info(media_file: Path, item: Path) -> dict:
+    """
+    Use guessit to parse media file information, leveraging directory context
+    when available so episode titles are not mistaken for series titles.
+    """
+    try:
+        rel_path = media_file.relative_to(item.parent)
+    except ValueError:
+        rel_path = media_file
+    guess = guessit(str(rel_path))
+    name_guess = guessit(media_file.name)
+
+    # If the relative path didn't detect an episode, but the filename clearly is an episode:
+    if guess.get("type") != "episode" and name_guess.get("type") == "episode":
+        series_title = guess.get("title")
+        guess = dict(name_guess)
+        if series_title:
+            guess["title"] = series_title
+
+    # If title is still missing and item is a directory, try getting title from item directory name
+    if not guess.get("title") and item.is_dir():
+        dir_guess = guessit(item.name)
+        if dir_guess.get("title"):
+            guess["title"] = dir_guess.get("title")
+
+    # If season is not detected for an episode, check filename or directory name
+    if guess.get("type") == "episode" and not guess.get("season"):
+        if name_guess.get("season"):
+            guess["season"] = name_guess.get("season")
+        elif item.is_dir():
+            dir_guess = guessit(item.name)
+            if dir_guess.get("season"):
+                guess["season"] = dir_guess.get("season")
+
+    return guess
 
 def is_downloading(path: Path) -> bool:
     """
@@ -111,24 +155,63 @@ def process_item(item: Path, media_dir: Path, trash_dir: Path):
         return
 
     for media_file in media_files:
-        guess = guessit(media_file.name)
+        guess = guess_media_info(media_file, item)
 
         if guess.get("type") == "episode":
-            title  = sanitize_title(str(guess.get("title", "Unknown Series")).title())
-            season = guess.get("season") or 1   # default to 1 if guessit can't detect
+            raw_title = extract_single_value(guess.get("title"), "Unknown Series")
+            title = sanitize_title(raw_title).title() or "Unknown Series"
+            raw_season = extract_single_value(guess.get("season"), 1)
+            try:
+                season = int(raw_season)
+            except (ValueError, TypeError):
+                season = 1
             dest_folder = media_dir / "Shows" / title / f"Season {season}"
         else:
-            title  = str(guess.get("title", "Unknown Movie")).title()
-            year   = guess.get("year", "")
+            raw_title = extract_single_value(guess.get("title"), "Unknown Movie")
+            title = str(raw_title).title() or "Unknown Movie"
+            raw_year = extract_single_value(guess.get("year"), "")
+            year = str(raw_year).strip() if raw_year else ""
             folder = f"{title} ({year})" if year else title
             dest_folder = media_dir / "Movies" / folder
 
         safe_move(media_file, dest_folder)
 
         # Move matching subtitles to the same destination
+        media_stem = media_file.stem.lower()
         for sub in list(sub_files):
-            safe_move(sub, dest_folder)
-            sub_files.remove(sub)
+            sub_stem = sub.stem.lower()
+            sub_info = guess_media_info(sub, item)
+            matched = False
+            if sub_stem == media_stem or sub_stem.startswith(media_stem + ".") or sub_stem.startswith(media_stem + "-"):
+                matched = True
+            elif (guess.get("type") == "episode" and
+                  sub_info.get("season") == guess.get("season") and
+                  sub_info.get("episode") == guess.get("episode")):
+                matched = True
+
+            if matched:
+                safe_move(sub, dest_folder)
+                sub_files.remove(sub)
+
+    # Move any remaining subtitles to their guessed destinations
+    for sub in list(sub_files):
+        sub_info = guess_media_info(sub, item)
+        if sub_info.get("type") == "episode":
+            sub_title = sanitize_title(extract_single_value(sub_info.get("title"), "Unknown Series")).title() or "Unknown Series"
+            sub_season = extract_single_value(sub_info.get("season"), 1)
+            try:
+                sub_season = int(sub_season)
+            except (ValueError, TypeError):
+                sub_season = 1
+            sub_dest = media_dir / "Shows" / sub_title / f"Season {sub_season}"
+        else:
+            sub_title = str(extract_single_value(sub_info.get("title"), "Unknown Movie")).title() or "Unknown Movie"
+            sub_year = extract_single_value(sub_info.get("year"), "")
+            sub_year = str(sub_year).strip() if sub_year else ""
+            sub_folder = f"{sub_title} ({sub_year})" if sub_year else sub_title
+            sub_dest = media_dir / "Movies" / sub_folder
+        safe_move(sub, sub_dest)
+        sub_files.remove(sub)
 
     # Move remaining other files to trash (empty dirs, NFOs, etc.)
     for other in other_files:
@@ -136,16 +219,14 @@ def process_item(item: Path, media_dir: Path, trash_dir: Path):
 
     # If the original download was a directory, try to clean it up
     if item.is_dir():
-        # Remove empty subdirs
         try:
-            # Only remove if now empty (all media was moved out)
-            remaining = list(item.rglob("*"))
-            remaining = [f for f in remaining if not f.name.endswith(".aria2")]
-            if not remaining:
+            # Check if any actual files remain (excluding .aria2)
+            remaining_files = [f for f in item.rglob("*") if f.is_file() and not f.name.endswith(".aria2")]
+            if not remaining_files:
                 shutil.rmtree(str(item))
                 logger.info(f"Removed empty source directory: {item}")
             else:
-                # Still has stuff — move the remnants to trash
+                # Still has files — move the remnants to trash
                 move_to_trash(item, trash_dir)
         except Exception as e:
             logger.warning(f"Could not clean up {item}: {e}")

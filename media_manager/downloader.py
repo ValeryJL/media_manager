@@ -20,12 +20,19 @@ def _rpc(method: str, params=None) -> dict:
     """Send a JSON-RPC request to aria2c via curl. Fast and reliable."""
     payload = json.dumps({"jsonrpc": "2.0", "method": method, "params": params or [], "id": "mm"})
     result = subprocess.run(
-        ["curl", "-sf", "-m", "5", "-d", payload, _RPC_URL],
+        ["curl", "-s", "-m", "5", "-d", payload, _RPC_URL],
         capture_output=True, text=True
     )
     if result.returncode != 0:
-        raise ConnectionError(f"aria2c RPC call failed: {result.stderr}")
-    return json.loads(result.stdout)
+        raise ConnectionError(f"aria2c RPC connection failed: {result.stderr or 'daemon unreachable'}")
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        raise ConnectionError(f"aria2c returned invalid response: {result.stdout}")
+    if "error" in data:
+        err_msg = data["error"].get("message", str(data["error"]))
+        raise RuntimeError(f"aria2c error: {err_msg}")
+    return data
 
 
 def create_hook_script() -> str:
@@ -102,9 +109,26 @@ def ensure_daemon():
         raise RuntimeError("aria2c daemon failed to start.")
 
 
-def add_download(uri: str, download_path: str):
+def add_download(target: str, download_path: str):
     ensure_daemon()
-    response = _rpc("aria2.addUri", [[uri], {"dir": str(download_path)}])
+    target = target.strip("'\" \t\r\n")
+    if not target:
+        raise ValueError("No magnet link or torrent file path provided.")
+
+    expanded_path = os.path.abspath(os.path.expanduser(target))
+
+    if os.path.isfile(expanded_path):
+        import base64
+        with open(expanded_path, "rb") as f:
+            torrent_b64 = base64.b64encode(f.read()).decode("utf-8")
+        response = _rpc("aria2.addTorrent", [torrent_b64, [], {"dir": str(download_path)}])
+    elif target.startswith("magnet:") or target.startswith("http://") or target.startswith("https://") or target.startswith("ftp://"):
+        response = _rpc("aria2.addUri", [[target], {"dir": str(download_path)}])
+    else:
+        if target.endswith(".torrent") or "/" in target or "\\" in target or os.path.exists(os.path.dirname(expanded_path)):
+            raise FileNotFoundError(f"Torrent file not found: '{target}'")
+        response = _rpc("aria2.addUri", [[target], {"dir": str(download_path)}])
+
     gid = response.get("result", "?")
     print(f"Added download: {gid}")
     return gid

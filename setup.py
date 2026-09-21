@@ -11,7 +11,8 @@ setup(
         "guessit",
         "cinemagoer",
         "rich",
-        "questionary"
+        "questionary",
+        "pirate-get"
     ],
     entry_points={
         "console_scripts": [
