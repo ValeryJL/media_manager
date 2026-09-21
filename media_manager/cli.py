@@ -113,10 +113,31 @@ def status():
     from .tui import get_binary_path
     aria2p_bin = get_binary_path("aria2p")
     try:
-        # Launch aria2p TUI (top-like interface)
-        subprocess.run([aria2p_bin])
-    except FileNotFoundError:
-        click.echo("Error: aria2p is not installed.")
+        subprocess.run([aria2p_bin, "top"])
+    except Exception:
+        # Fallback to rich table if aria2p fails to open or is not available
+        try:
+            from .downloader import get_active_downloads
+            from rich.console import Console
+            from rich.table import Table
+            console = Console()
+            dls = get_active_downloads()
+            if not dls:
+                console.print("[bold yellow]No active downloads.[/]")
+                return
+            table = Table(title="Active Downloads", show_header=True, header_style="bold cyan")
+            table.add_column("GID", style="dim")
+            table.add_column("Name", style="green")
+            table.add_column("Progress", justify="right")
+            table.add_column("Speed", justify="right")
+            table.add_column("Status")
+            for d in dls:
+                speed = d["speed"]
+                speed_str = f"{speed / 1024:.1f} KB/s" if speed < 1024*1024 else f"{speed / (1024*1024):.2f} MB/s"
+                table.add_row(d["gid"], str(d["name"]), f"{d['progress']}%", speed_str, d["status"])
+            console.print(table)
+        except Exception as e:
+            click.echo(f"Error checking download status: {e}")
 
 @cli.command()
 def organize():
@@ -125,7 +146,7 @@ def organize():
     dl_path = config["download_path"]
     media_path = config["media_path"]
     
-    click.echo("Organizing downloads...")
+    click.echo(f"Organizing downloads from {dl_path} into {media_path}...")
     organize_downloads(dl_path, media_path)
     click.echo("Done.")
 
@@ -147,8 +168,8 @@ def hook(gid, num_files, path):
     from pathlib import Path
     from .organizer import process_item, move_to_trash
     
-    item_path = Path(path)
-    dl_dir = Path(dl_path)
+    item_path = Path(path).resolve()
+    dl_dir = Path(dl_path).resolve()
     
     # Try to find the top-level item inside dl_path (e.g. the folder containing torrent files)
     try:

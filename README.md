@@ -4,25 +4,34 @@ Herramienta de línea de comandos en Python para buscar, descargar (vía `aria2c
 
 ## Instalación
 
+### Windows (PowerShell)
+1. Abre PowerShell en la carpeta del proyecto.
+2. Ejecuta el instalador:
+   ```powershell
+   .\install.ps1
+   ```
+   *(El script instalará automáticamente `aria2` mediante WinGet/Chocolatey si no está presente, configurará el entorno virtual con todas las dependencias y agregará `media-manager` al PATH de usuario).*
+
+### Linux / macOS (Bash)
 1. Clona el repositorio o ubícate en la carpeta `media_manager`.
 2. Ejecuta el instalador:
    ```bash
    ./install.sh
    ```
-   *(Este script instalará `aria2` mediante apt, junto con todas las dependencias de Python como `pirate-get`, e instalará la aplicación en `~/.local/bin/`).*
-3. Asegúrate de añadir `~/.local/bin` a tu variable PATH.
+   *(Instala `aria2` mediante apt/gestor del sistema, configura el venv en `~/.local/share/media_manager/venv` y crea enlaces en `~/.local/bin/`).*
 
 ## Configuración 
 
 La configuración principal se genera automáticamente la primera vez que inicia el programa. Se guardará en:
-`~/.config/media_manager/config.yml`
+- Windows / Linux: `~/.config/media_manager/config.yml`
 
-El archivo de configuración tiene la siguiente estructura:
+El archivo de configuración tiene la siguiente estructura por defecto:
 ```yaml
-download_path: $HOME/Media/Downloads   # Ruta de descargas provisionales
-media_path: $HOME/Media                # Ruta de destino final multimedia
+download_path: ~/Media/Downloads   # Ruta de descargas provisionales en la carpeta de usuario
+media_path: ~/Media                # Ruta de destino final multimedia en la carpeta de usuario
 ```
-*(Puedes usar variables de entorno como `$HOME`).*
+*(Se expanden automáticamente rutas relativas con `~`, variables como `$HOME` o `%USERPROFILE%`).*
+
 
 ## Uso
 

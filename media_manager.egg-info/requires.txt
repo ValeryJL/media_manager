@@ -1,8 +1,0 @@
-click
-pyyaml
-aria2p[tui]
-guessit
-cinemagoer
-rich
-questionary
-pirate-get

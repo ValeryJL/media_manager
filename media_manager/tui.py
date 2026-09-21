@@ -11,11 +11,58 @@ from rich.text import Text
 
 console = Console()
 
+def _refresh_windows_path():
+    """Ensure os.environ['PATH'] contains latest paths from Windows Registry."""
+    if os.name != "nt":
+        return
+    try:
+        import winreg
+        paths = []
+        for root, subkey in [
+            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+            (winreg.HKEY_CURRENT_USER, r"Environment")
+        ]:
+            try:
+                with winreg.OpenKey(root, subkey) as k:
+                    val, _ = winreg.QueryValueEx(k, "Path")
+                    paths.append(val)
+            except Exception:
+                pass
+        if paths:
+            reg_paths = ";".join(paths)
+            current_paths = os.environ.get("PATH", "")
+            os.environ["PATH"] = reg_paths + ";" + current_paths
+    except Exception:
+        pass
+
 def get_binary_path(name: str) -> str:
-    """Find binary in the same environment/directory as sys.executable, or fallback to PATH."""
-    venv_bin = Path(sys.executable).parent / name
-    if venv_bin.exists() and os.access(venv_bin, os.X_OK):
-        return str(venv_bin)
+    """Find binary in the same environment/directory as sys.executable, venv, or fallback to PATH."""
+    exec_dir = Path(sys.executable).parent
+    
+    # Check next to python executable (e.g. venv/bin or venv/Scripts)
+    found = shutil.which(name, path=str(exec_dir))
+    if found:
+        return found
+        
+    # Check Scripts directory if running under main Python install
+    scripts_dir = exec_dir / "Scripts"
+    if scripts_dir.exists():
+        found = shutil.which(name, path=str(scripts_dir))
+        if found:
+            return found
+            
+    # Check standard media_manager venv
+    venv_dir = Path.home() / ".local" / "share" / "media_manager" / "venv"
+    for sub in ["Scripts", "bin"]:
+        candidate = venv_dir / sub
+        if candidate.exists():
+            found = shutil.which(name, path=str(candidate))
+            if found:
+                return found
+
+    if os.name == "nt":
+        _refresh_windows_path()
+
     found = shutil.which(name)
     if found:
         return found
@@ -31,6 +78,8 @@ def search_interactive(query_str: str) -> str:
                 [pirate_bin, query_str, "-j"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=True
             )
         except subprocess.CalledProcessError as e:

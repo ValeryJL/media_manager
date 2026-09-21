@@ -13,19 +13,38 @@ SUB_EXTENSIONS = {".srt", ".sub", ".ass", ".vtt"}
 # Regex to strip trailing SxxE / Sxx / Exx tokens that guessit sometimes leaves in titles
 _SE_TRAIL_RE = re.compile(r'\s+[Ss]\d+[Ee]?\d*$|\s+[Ee]\d+$', re.IGNORECASE)
 
+# Windows invalid path characters: < > : " / \ | ? *
+_INVALID_CHARS_RE = re.compile(r'[<>:"/\\|?*]')
+
 def extract_single_value(val, default=None):
     if isinstance(val, (list, tuple)):
         return val[0] if val else default
     return val if val is not None else default
 
+def clean_filename(name: str) -> str:
+    """Sanitize names for Windows and Unix filesystem safety."""
+    if not name:
+        return ""
+    # Replace colon with hyphen-space (e.g. "Mission: Impossible" -> "Mission - Impossible")
+    cleaned = str(name).replace(":", " - ")
+    # Replace other invalid characters with empty string
+    cleaned = _INVALID_CHARS_RE.sub("", cleaned)
+    # Remove trailing dots and spaces (forbidden on Windows directory/file names)
+    cleaned = cleaned.strip(". ")
+    # Replace multiple spaces with single space
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    return cleaned
+
 def sanitize_title(title) -> str:
-    """Remove stray S01E-style fragments from a guessit-parsed title."""
+    """Remove stray S01E-style fragments and invalid filesystem chars from a title."""
     if not title:
         return ""
     if isinstance(title, (list, tuple)):
         title = title[0]
     title_str = str(title).strip()
-    return _SE_TRAIL_RE.sub('', title_str).strip()
+    title_str = _SE_TRAIL_RE.sub('', title_str).strip()
+    return clean_filename(title_str)
+
 
 def guess_media_info(media_file: Path, item: Path) -> dict:
     """
@@ -87,6 +106,9 @@ def is_downloading(path: Path) -> bool:
 
 def organize_downloads(download_path: str, media_path: str):
     """Scan download folder and move completed files to correct media destinations."""
+    if not logger.handlers and not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     dl_dir = Path(download_path)
     media_dir = Path(media_path)
     trash_dir = media_dir / ".trash"
@@ -117,9 +139,13 @@ def safe_move(src: Path, dest_dir: Path) -> bool:
         logger.info(f"Skipping {src.name}: already exists at {dest_dir}")
         return False
     dest_dir.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(src), str(dest))
-    logger.info(f"Moved {src.name} -> {dest_dir}")
-    return True
+    try:
+        shutil.move(str(src), str(dest))
+        logger.info(f"Moved {src.name} -> {dest_dir}")
+        return True
+    except PermissionError:
+        logger.warning(f"Skipping {src.name}: file is locked or currently in use.")
+        return False
 
 def process_item(item: Path, media_dir: Path, trash_dir: Path):
     """Process a single completed file or directory from the downloads folder."""
@@ -160,6 +186,7 @@ def process_item(item: Path, media_dir: Path, trash_dir: Path):
         if guess.get("type") == "episode":
             raw_title = extract_single_value(guess.get("title"), "Unknown Series")
             title = sanitize_title(raw_title).title() or "Unknown Series"
+            title = clean_filename(title)
             raw_season = extract_single_value(guess.get("season"), 1)
             try:
                 season = int(raw_season)
@@ -168,10 +195,12 @@ def process_item(item: Path, media_dir: Path, trash_dir: Path):
             dest_folder = media_dir / "Shows" / title / f"Season {season}"
         else:
             raw_title = extract_single_value(guess.get("title"), "Unknown Movie")
-            title = str(raw_title).title() or "Unknown Movie"
+            title = sanitize_title(raw_title).title() or "Unknown Movie"
+            title = clean_filename(title)
             raw_year = extract_single_value(guess.get("year"), "")
             year = str(raw_year).strip() if raw_year else ""
             folder = f"{title} ({year})" if year else title
+            folder = clean_filename(folder)
             dest_folder = media_dir / "Movies" / folder
 
         safe_move(media_file, dest_folder)
@@ -198,6 +227,7 @@ def process_item(item: Path, media_dir: Path, trash_dir: Path):
         sub_info = guess_media_info(sub, item)
         if sub_info.get("type") == "episode":
             sub_title = sanitize_title(extract_single_value(sub_info.get("title"), "Unknown Series")).title() or "Unknown Series"
+            sub_title = clean_filename(sub_title)
             sub_season = extract_single_value(sub_info.get("season"), 1)
             try:
                 sub_season = int(sub_season)
@@ -205,10 +235,12 @@ def process_item(item: Path, media_dir: Path, trash_dir: Path):
                 sub_season = 1
             sub_dest = media_dir / "Shows" / sub_title / f"Season {sub_season}"
         else:
-            sub_title = str(extract_single_value(sub_info.get("title"), "Unknown Movie")).title() or "Unknown Movie"
+            sub_title = sanitize_title(extract_single_value(sub_info.get("title"), "Unknown Movie")).title() or "Unknown Movie"
+            sub_title = clean_filename(sub_title)
             sub_year = extract_single_value(sub_info.get("year"), "")
             sub_year = str(sub_year).strip() if sub_year else ""
             sub_folder = f"{sub_title} ({sub_year})" if sub_year else sub_title
+            sub_folder = clean_filename(sub_folder)
             sub_dest = media_dir / "Movies" / sub_folder
         safe_move(sub, sub_dest)
         sub_files.remove(sub)
@@ -246,5 +278,8 @@ def move_to_trash(item: Path, trash_dir: Path):
     try:
         shutil.move(str(item), str(dest))
         logger.info(f"Trashed: {item.name} -> {dest}")
+    except PermissionError:
+        logger.warning(f"Could not move {item} to trash: file is locked or in use.")
     except Exception as e:
         logger.error(f"Failed to move {item} to trash: {e}")
+

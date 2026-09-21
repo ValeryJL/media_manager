@@ -1,2 +1,3 @@
-download_path: $HOME/Media/Downloads
-media_path: $HOME/Media
+download_path: ~/Media/Downloads
+media_path: ~/Media
+

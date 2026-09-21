@@ -1,2 +1,0 @@
-[console_scripts]
-media-manager = media_manager.cli:cli
