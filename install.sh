@@ -20,8 +20,25 @@ python3 -m venv "$VENV_DIR"
 
 # Install python dependencies and the app itself inside the venv
 echo "Installing pirate-get and media-manager inside venv..."
-"$VENV_DIR/bin/pip" install pirate-get
-"$VENV_DIR/bin/pip" install -e .
+"$VENV_DIR/bin/pip" install --upgrade pip --quiet
+"$VENV_DIR/bin/pip" install pirate-get --quiet
+"$VENV_DIR/bin/pip" install -e . --quiet
+
+# Setup media folders and configuration
+echo "Creating media directories and configuration..."
+mkdir -p "$HOME/Media/Downloads" "$HOME/Media/Movies" "$HOME/Media/Shows"
+CONFIG_DIR="$HOME/.config/media_manager"
+mkdir -p "$CONFIG_DIR"
+if [ ! -f "$CONFIG_DIR/config.yml" ]; then
+    cat << 'EOF' > "$CONFIG_DIR/config.yml"
+download_path: ~/Media/Downloads
+media_path: ~/Media
+EOF
+fi
+
+# Generate hook script and start/reload aria2c daemon in background
+echo "Initializing background event hook and aria2c daemon..."
+"$VENV_DIR/bin/python" -c "from media_manager.downloader import create_hook_script, ensure_daemon; create_hook_script(); ensure_daemon()"
 
 # Create symlinks in user's local bin so they are accessible without the venv path
 echo "Adding symlinks to $HOME/.local/bin..."

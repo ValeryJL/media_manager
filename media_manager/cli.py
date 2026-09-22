@@ -25,6 +25,12 @@ def cli(ctx, file_input):
 
     if ctx.invoked_subcommand is None:
         # No command was passed, show the main interactive menu
+        from .downloader import ensure_daemon
+        try:
+            ensure_daemon()
+        except Exception:
+            pass
+
         import questionary
         from rich.console import Console
         console = Console()
@@ -110,11 +116,17 @@ def download(uri):
 @cli.command()
 def status():
     """Show the current download status."""
+    from .downloader import ensure_daemon
+    try:
+        ensure_daemon()
+    except Exception as e:
+        click.echo(f"Error starting aria2c: {e}")
+        return
+
     from .tui import get_binary_path
     aria2p_bin = get_binary_path("aria2p")
-    try:
-        subprocess.run([aria2p_bin, "top"])
-    except Exception:
+    proc = subprocess.run([aria2p_bin, "top"])
+    if proc.returncode != 0:
         # Fallback to rich table if aria2p fails to open or is not available
         try:
             from .downloader import get_active_downloads
@@ -156,33 +168,47 @@ def organize():
 @click.argument('path')
 def hook(gid, num_files, path):
     """Hidden command called by aria2c on download complete."""
-    config = load_config()
-    media_path = config["media_path"]
-    dl_path = config["download_path"]
-    
-    # aria2c passes 0 for num_files if the download is a single file, actually the docs say it passes the number of files.
-    # If the download has no files, we do nothing.
-    if num_files == "0":
-        return
-        
-    from pathlib import Path
-    from .organizer import process_item, move_to_trash
-    
-    item_path = Path(path).resolve()
-    dl_dir = Path(dl_path).resolve()
-    
-    # Try to find the top-level item inside dl_path (e.g. the folder containing torrent files)
     try:
-        rel_path = item_path.relative_to(dl_dir)
-        top_level_name = rel_path.parts[0]
-        item_to_process = dl_dir / top_level_name
-    except ValueError:
-        # If it's outside dl_path or just a file in dl_path directly, process the path itself
-        item_to_process = item_path
+        config = load_config()
+        media_path = config["media_path"]
+        dl_path = config["download_path"]
+        
+        # aria2c passes 0 for num_files if the download is a single file, actually the docs say it passes the number of files.
+        # If the download has no files, we do nothing.
+        if num_files == "0":
+            return
+            
+        from pathlib import Path
+        from .organizer import process_item
+        
+        item_path = Path(path).resolve()
+        dl_dir = Path(dl_path).resolve()
+        
+        # Try to find the top-level item inside dl_path (e.g. the folder containing torrent files)
+        try:
+            rel_path = item_path.relative_to(dl_dir)
+            top_level_name = rel_path.parts[0]
+            item_to_process = dl_dir / top_level_name
+        except ValueError:
+            # If it's outside dl_path or just a file in dl_path directly, process the path itself
+            item_to_process = item_path
 
-    if item_to_process.exists():
-        trash_dir = Path(media_path) / ".trash"
-        process_item(item_to_process, Path(media_path), trash_dir)
+        if item_to_process.exists():
+            trash_dir = Path(media_path) / ".trash"
+            process_item(item_to_process, Path(media_path), trash_dir)
+    except Exception as e:
+        import os
+        import datetime
+        import traceback
+        try:
+            log_dir = os.path.expanduser("~/.config/media_manager")
+            os.makedirs(log_dir, exist_ok=True)
+            log_file = os.path.join(log_dir, "hook.log")
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.datetime.now().isoformat()}] GID: {gid} PATH: {path} ERROR: {e}\n")
+                f.write(traceback.format_exc() + "\n")
+        except Exception:
+            pass
 
 if __name__ == '__main__':
     cli()

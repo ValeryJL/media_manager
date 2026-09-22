@@ -110,6 +110,19 @@ if (-not (Test-Path $configFile)) {
     Write-Host "[OK] Archivo de configuracion ya existe en '$configFile'." -ForegroundColor Green
 }
 
+# Generar hook silencioso para eventos de aria2c
+Write-Host "Configurando hook silencioso en segundo plano..." -ForegroundColor Yellow
+& $VENV_PYTHON -c "from media_manager.downloader import create_hook_script; create_hook_script()"
+$hookExe = Join-Path $configDir "hook.exe"
+if (Test-Path $hookExe) {
+    Write-Host "[OK] Hook silencioso en segundo plano listo en '$hookExe'." -ForegroundColor Green
+}
+
+# Iniciar o recargar daemon de aria2c con el hook silencioso
+Write-Host "Iniciando daemon de aria2c en segundo plano con hook silencioso..." -ForegroundColor Yellow
+& $VENV_PYTHON -c "from media_manager.downloader import ensure_daemon; ensure_daemon()"
+Write-Host "[OK] Daemon de aria2c activo y listo en segundo plano." -ForegroundColor Green
+
 # 6. Configurar PATH del usuario y accesos directos
 Write-Host "[6/6] Configurando variables de entorno PATH..." -ForegroundColor Yellow
 
