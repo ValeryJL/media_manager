@@ -22,7 +22,7 @@ python3 -m venv "$VENV_DIR"
 echo "Installing pirate-get and media-manager inside venv..."
 "$VENV_DIR/bin/pip" install --upgrade pip --quiet
 "$VENV_DIR/bin/pip" install pirate-get --quiet
-"$VENV_DIR/bin/pip" install -e . --quiet
+"$VENV_DIR/bin/pip" install . --quiet
 
 # Setup media folders and configuration
 echo "Creating media directories and configuration..."

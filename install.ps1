@@ -84,7 +84,7 @@ Write-Host "[OK] Entorno virtual listo." -ForegroundColor Green
 Write-Host "[4/6] Instalando dependencias de Python y Media Manager..." -ForegroundColor Yellow
 & $VENV_PIP install --upgrade pip --quiet
 & $VENV_PIP install pirate-get --quiet
-& $VENV_PIP install -e "$PSScriptRoot" --quiet
+& $VENV_PIP install "$PSScriptRoot" --quiet
 Write-Host "[OK] Paquetes instalados correctamente." -ForegroundColor Green
 
 # 5. Configuracion y carpetas de medios en la carpeta de usuario
