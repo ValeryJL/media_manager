@@ -71,14 +71,26 @@ def guess_media_info(media_file: Path, item: Path) -> dict:
         if dir_guess.get("title"):
             guess["title"] = dir_guess.get("title")
 
-    # If season is not detected for an episode, check filename or directory name
-    if guess.get("type") == "episode" and not guess.get("season"):
-        if name_guess.get("season"):
-            guess["season"] = name_guess.get("season")
-        elif item.is_dir():
-            dir_guess = guessit(item.name)
-            if dir_guess.get("season"):
-                guess["season"] = dir_guess.get("season")
+    # For episodes, prioritize the filename's season and episode if detected,
+    # because directory names often represent multi-season packs (e.g. S01-S02)
+    # which cause guessit(rel_path) to return a list like [1, 2].
+    if guess.get("type") == "episode" or name_guess.get("type") == "episode":
+        name_season = name_guess.get("season")
+        if name_season is not None and not isinstance(name_season, (list, tuple)):
+            guess["season"] = name_season
+        elif isinstance(guess.get("season"), (list, tuple)) or not guess.get("season"):
+            if media_file.parent != item.parent:
+                parent_guess = guessit(media_file.parent.name)
+                if parent_guess.get("season") and not isinstance(parent_guess.get("season"), (list, tuple)):
+                    guess["season"] = parent_guess.get("season")
+            if not guess.get("season") and item.is_dir():
+                dir_guess = guessit(item.name)
+                if dir_guess.get("season"):
+                    guess["season"] = dir_guess.get("season")
+
+        name_ep = name_guess.get("episode")
+        if name_ep is not None and not isinstance(name_ep, (list, tuple)):
+            guess["episode"] = name_ep
 
     return guess
 
