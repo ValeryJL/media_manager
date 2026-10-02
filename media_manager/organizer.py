@@ -46,47 +46,98 @@ def sanitize_title(title) -> str:
     return clean_filename(title_str)
 
 
+# Regex to match Season directories (Season 1, Temporada 2, S03, etc.)
+SEASON_DIR_RE = re.compile(r'^(?:Season|Series|Temporada|Stagione|Staffel|S|T)\s*(\d+)$', re.IGNORECASE)
+
+# Regex to match Extras / Specials directories
+EXTRAS_DIR_RE = re.compile(
+    r'^(?:Extras?|Extra\s*Episod(?:e|es|s)?|Specials?|Shorts?|Featurettes?|Bonus|Season\s*0+|S0+)$',
+    re.IGNORECASE
+)
+
+def extract_season_from_path(media_file: Path, base_dir: Path):
+    """Scan parent directories up to base_dir to find an explicit Season or Extras folder."""
+    curr = media_file.parent
+    while curr != base_dir and curr != curr.parent:
+        name = curr.name
+        m = SEASON_DIR_RE.match(name)
+        if m:
+            return int(m.group(1))
+        if EXTRAS_DIR_RE.match(name):
+            return 0
+        curr = curr.parent
+    return None
+
+def find_effective_series_dir(media_file: Path, item: Path) -> Path:
+    """
+    For torrents containing multiple shows or franchises, locate the specific
+    series folder containing the media file rather than using the torrent root.
+    """
+    if media_file == item or media_file.parent == item:
+        return item
+    if item.exists() and not item.is_dir():
+        return item
+    try:
+        rel_dirs = media_file.parent.relative_to(item).parts
+    except ValueError:
+        return item
+    if not rel_dirs:
+        return item
+    # If the first directory is a season or extras folder, the item itself is the series
+    if SEASON_DIR_RE.match(rel_dirs[0]) or EXTRAS_DIR_RE.match(rel_dirs[0]):
+        return item
+    # Otherwise, rel_dirs[0] is an inner series folder (e.g. 'Ben 10 Alien Force')
+    return item / rel_dirs[0]
+
 def guess_media_info(media_file: Path, item: Path) -> dict:
     """
     Use guessit to parse media file information, leveraging directory context
     when available so episode titles are not mistaken for series titles.
     """
+    effective_item = find_effective_series_dir(media_file, item)
+    is_multi_pack = (effective_item != item)
+
     try:
-        rel_path = media_file.relative_to(item.parent)
+        rel_path = media_file.relative_to(effective_item.parent)
     except ValueError:
         rel_path = media_file
-    guess = guessit(str(rel_path))
-    name_guess = guessit(media_file.name)
 
-    # If the relative path didn't detect an episode, but the filename clearly is an episode:
-    if guess.get("type") != "episode" and name_guess.get("type") == "episode":
-        series_title = guess.get("title")
-        guess = dict(name_guess)
-        if series_title:
-            guess["title"] = series_title
+    guess = dict(guessit(str(rel_path)))
+    name_guess = dict(guessit(media_file.name))
+    path_season = extract_season_from_path(media_file, item)
 
-    # If title is still missing and item is a directory, try getting title from item directory name
-    if not guess.get("title") and item.is_dir():
-        dir_guess = guessit(item.name)
-        if dir_guess.get("title"):
-            guess["title"] = dir_guess.get("title")
+    # In multi-packs, the subfolder name (e.g. "Ben 10 Alien Force") is the series title.
+    if is_multi_pack:
+        # Use type=movie to prevent numbers in the show title (like '10') from being treated as episodes
+        sub_guess = guessit(effective_item.name, {"type": "movie"})
+        guess["title"] = sub_guess.get("title") or effective_item.name
+        if name_guess.get("type") == "episode" or path_season is not None or guess.get("type") == "episode":
+            guess["type"] = "episode"
+    else:
+        # If the relative path didn't detect an episode, but the filename clearly is an episode:
+        if guess.get("type") != "episode" and name_guess.get("type") == "episode":
+            series_title = guess.get("title")
+            guess.update(name_guess)
+            if series_title:
+                guess["title"] = series_title
 
-    # For episodes, prioritize the filename's season and episode if detected,
-    # because directory names often represent multi-season packs (e.g. S01-S02)
-    # which cause guessit(rel_path) to return a list like [1, 2].
-    if guess.get("type") == "episode" or name_guess.get("type") == "episode":
-        name_season = name_guess.get("season")
-        if name_season is not None and not isinstance(name_season, (list, tuple)):
-            guess["season"] = name_season
-        elif isinstance(guess.get("season"), (list, tuple)) or not guess.get("season"):
-            if media_file.parent != item.parent:
-                parent_guess = guessit(media_file.parent.name)
-                if parent_guess.get("season") and not isinstance(parent_guess.get("season"), (list, tuple)):
-                    guess["season"] = parent_guess.get("season")
-            if not guess.get("season") and item.is_dir():
-                dir_guess = guessit(item.name)
-                if dir_guess.get("season"):
-                    guess["season"] = dir_guess.get("season")
+        # If title is still missing and item is a directory, try getting title from item directory name
+        if not guess.get("title") and item.is_dir():
+            dir_guess = guessit(effective_item.name, {"type": "movie"})
+            if dir_guess.get("title"):
+                guess["title"] = dir_guess.get("title")
+
+    # For episodes, determine season and episode with strict directory precedence for seasons
+    if guess.get("type") == "episode" or name_guess.get("type") == "episode" or path_season is not None:
+        guess["type"] = "episode"
+        if path_season is not None:
+            guess["season"] = path_season
+        else:
+            name_season = name_guess.get("season")
+            if name_season is not None and not isinstance(name_season, (list, tuple)):
+                guess["season"] = name_season
+            elif not guess.get("season") or isinstance(guess.get("season"), (list, tuple)):
+                guess["season"] = 1
 
         name_ep = name_guess.get("episode")
         if name_ep is not None and not isinstance(name_ep, (list, tuple)):
