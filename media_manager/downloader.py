@@ -22,7 +22,7 @@ _STATE_FILE  = os.path.join(_CONFIG_DIR, ".hook_registered")
 def get_hook_path() -> str:
     """Return the absolute path to the event hook script/executable."""
     if os.name == "nt":
-        return os.path.join(_CONFIG_DIR, "hook.exe")
+        return os.path.join(_CONFIG_DIR, "hook.bat")
     return os.path.join(_CONFIG_DIR, "hook.sh")
 
 
@@ -93,100 +93,18 @@ def _rpc(method: str, params=None) -> dict:
     return data
 
 
-def _find_csc_compiler() -> str:
-    """Find csc.exe compiler on Windows."""
-    for csc_path in [
-        r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe",
-        r"C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe",
-    ]:
-        if os.path.exists(csc_path):
-            return csc_path
-    found = shutil.which("csc")
-    if found:
-        return found
-    return ""
-
-
 def create_hook_script() -> str:
     os.makedirs(_CONFIG_DIR, exist_ok=True)
     py_exe = sys.executable
     if os.name == "nt":
-        hook_exe = os.path.join(_CONFIG_DIR, "hook.exe")
-        csc = _find_csc_compiler()
-        if csc:
-            escaped_py = py_exe.replace('"', '""')
-            cs_source = f'''using System;
-using System.Diagnostics;
-using System.IO;
-
-class Program {{
-    static int Main(string[] args) {{
-        try {{
-            string pyExe = @"{escaped_py}";
-            string targetExe = pyExe;
-            string dir = Path.GetDirectoryName(pyExe);
-            string pyw = Path.Combine(dir, "pythonw.exe");
-            if (File.Exists(pyw)) {{
-                targetExe = pyw;
-            }} else if (!File.Exists(pyExe)) {{
-                targetExe = "pythonw.exe";
-            }}
-
-            string escapedArgs = "";
-            for (int i = 0; i < args.Length; i++) {{
-                if (i > 0) escapedArgs += " ";
-                escapedArgs += "\\"" + args[i].Replace("\\"", "\\\\\\"") + "\\"";
-            }}
-
-            var psi = new ProcessStartInfo {{
-                FileName = targetExe,
-                Arguments = "-m media_manager.cli hook " + escapedArgs,
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                WindowStyle = ProcessWindowStyle.Hidden
-            }};
-
-            using (var proc = Process.Start(psi)) {{
-                proc.WaitForExit();
-                return proc.ExitCode;
-            }}
-        }} catch (Exception ex) {{
-            try {{
-                string logPath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    @".config\\media_manager\\hook.log"
-                );
-                File.AppendAllText(logPath, DateTime.Now + " [ERROR] " + ex.ToString() + Environment.NewLine);
-            }} catch {{}}
-            return 1;
-        }}
-    }}
-}}
-'''
-            cs_path = os.path.join(_CONFIG_DIR, "hook.cs")
-            with open(cs_path, "w", encoding="utf-8") as f:
-                f.write(cs_source)
-
-            flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0x08000000
-            res = subprocess.run(
-                [csc, "/nologo", "/target:winexe", f"/out:{hook_exe}", cs_path],
-                capture_output=True,
-                creationflags=flags
-            )
+        # Remove legacy hook.exe if present to avoid Windows App Control (Smart App Control / WDAC) violations
+        old_hook_exe = os.path.join(_CONFIG_DIR, "hook.exe")
+        if os.path.exists(old_hook_exe):
             try:
-                if os.path.exists(cs_path):
-                    os.remove(cs_path)
+                os.remove(old_hook_exe)
             except Exception:
                 pass
 
-            if res.returncode == 0 and os.path.exists(hook_exe):
-                # Update hook.bat to delegate silently to hook.exe if called
-                bat_path = os.path.join(_CONFIG_DIR, "hook.bat")
-                with open(bat_path, "w", encoding="utf-8") as f:
-                    f.write(f'@echo off\r\n"{hook_exe}" %*\r\n')
-                return hook_exe
-
-        # Fallback if csc is unavailable: use pythonw or start /B
         bat_path = os.path.join(_CONFIG_DIR, "hook.bat")
         dir_name = os.path.dirname(py_exe)
         pyw_exe = os.path.join(dir_name, "pythonw.exe")

@@ -68,14 +68,26 @@ def get_binary_path(name: str) -> str:
         return found
     return name
 
+def get_pirate_command() -> list:
+    """Return command list for pirate-get.
+    Prefers executing through the active Python interpreter [sys.executable, "-m", "pirate.pirate"]
+    to bypass Windows App Control / WDAC restrictions that block unsigned launcher .exe stubs.
+    """
+    try:
+        import pirate.pirate
+        return [sys.executable, "-m", "pirate.pirate"]
+    except ImportError:
+        pass
+    return [get_binary_path("pirate-get")]
+
 def search_interactive(query_str: str) -> str:
     """Runs pirate-get in JSON mode, displays a rich table, and returns the chosen magnet link."""
-    pirate_bin = get_binary_path("pirate-get")
+    pirate_cmd = get_pirate_command()
     with console.status(f"[bold green]Searching for '{query_str}'..."):
         try:
             # -j for JSON output. We don't use -C here because we'll handle the output manually
             result = subprocess.run(
-                [pirate_bin, query_str, "-j"],
+                [*pirate_cmd, query_str, "-j"],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -85,8 +97,8 @@ def search_interactive(query_str: str) -> str:
         except subprocess.CalledProcessError as e:
             console.print("[bold red]Search failed or no results found.[/]")
             return None
-        except FileNotFoundError:
-            console.print("[bold red]Error: pirate-get is not installed or not in PATH.[/]")
+        except (FileNotFoundError, OSError) as e:
+            console.print(f"[bold red]Error running search provider:[/] {e}")
             return None
 
     if not result.stdout or not result.stdout.strip():

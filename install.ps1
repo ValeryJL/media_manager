@@ -113,9 +113,13 @@ if (-not (Test-Path $configFile)) {
 # Generar hook silencioso para eventos de aria2c
 Write-Host "Configurando hook silencioso en segundo plano..." -ForegroundColor Yellow
 & $VENV_PYTHON -c "from media_manager.downloader import create_hook_script; create_hook_script()"
-$hookExe = Join-Path $configDir "hook.exe"
-if (Test-Path $hookExe) {
-    Write-Host "[OK] Hook silencioso en segundo plano listo en '$hookExe'." -ForegroundColor Green
+$hookBat = Join-Path $configDir "hook.bat"
+if (Test-Path $hookBat) {
+    Write-Host "[OK] Hook silencioso en segundo plano listo en '$hookBat'." -ForegroundColor Green
+}
+$oldHookExe = Join-Path $configDir "hook.exe"
+if (Test-Path $oldHookExe) {
+    Remove-Item -Path $oldHookExe -Force -ErrorAction SilentlyContinue
 }
 
 # Iniciar o recargar daemon de aria2c con el hook silencioso

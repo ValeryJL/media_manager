@@ -1,3 +1,4 @@
+import sys
 import click
 import subprocess
 import time
@@ -123,10 +124,22 @@ def status():
         click.echo(f"Error starting aria2c: {e}")
         return
 
-    from .tui import get_binary_path
-    aria2p_bin = get_binary_path("aria2p")
-    proc = subprocess.run([aria2p_bin, "top"])
-    if proc.returncode != 0:
+    try:
+        import aria2p
+        aria2p_cmd = [sys.executable, "-m", "aria2p", "top"]
+    except ImportError:
+        from .tui import get_binary_path
+        aria2p_cmd = [get_binary_path("aria2p"), "top"]
+
+    failed = False
+    try:
+        proc = subprocess.run(aria2p_cmd)
+        if proc.returncode != 0:
+            failed = True
+    except Exception:
+        failed = True
+
+    if failed:
         # Fallback to rich table if aria2p fails to open or is not available
         try:
             from .downloader import get_active_downloads
