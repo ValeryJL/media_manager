@@ -7,7 +7,6 @@ setup(
     install_requires=[
         "click",
         "pyyaml",
-        "aria2p[tui]",
         "guessit",
         "cinemagoer",
         "rich",

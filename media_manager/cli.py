@@ -1,10 +1,50 @@
 import sys
 import click
-import subprocess
-import time
 from .config import load_config, get_config_dir
+from .tui import _ensure_utf8_console
+
+_ensure_utf8_console()
 from .organizer import organize_downloads
-from .downloader import add_download
+from .downloader import (
+    add_download,
+    ensure_daemon,
+    get_all_downloads,
+    pause_download,
+    resume_download,
+    pause_all_downloads,
+    resume_all_downloads,
+    remove_download,
+    clear_completed_downloads,
+    record_completed_download,
+)
+
+
+def _resolve_target_gid(identifier: str) -> dict:
+    """Resolve a download by 1-based index, exact GID, GID prefix, or substring of name."""
+    dls = get_all_downloads()
+    if not dls:
+        raise ValueError("No hay descargas en la lista.")
+
+    ident = identifier.strip()
+    if ident.isdigit():
+        idx = int(ident) - 1
+        if 0 <= idx < len(dls):
+            return dls[idx]
+
+    for d in dls:
+        if d["gid"].lower() == ident.lower():
+            return d
+
+    for d in dls:
+        if d["gid"].lower().startswith(ident.lower()):
+            return d
+
+    for d in dls:
+        if ident.lower() in d["name"].lower():
+            return d
+
+    raise ValueError(f"No se encontró ninguna descarga que coincida con '{identifier}'.")
+
 
 @click.group(invoke_without_command=True)
 @click.option('-f', '--file', 'file_input', type=str, help='Path to a .torrent file or magnet link to download.')
@@ -26,7 +66,6 @@ def cli(ctx, file_input):
 
     if ctx.invoked_subcommand is None:
         # No command was passed, show the main interactive menu
-        from .downloader import ensure_daemon
         try:
             ensure_daemon()
         except Exception:
@@ -43,7 +82,8 @@ def cli(ctx, file_input):
             choices=[
                 questionary.Choice("🔍 Search for Media", value="search"),
                 questionary.Choice("🧲 Add Magnet Link / Torrent File", value="add"),
-                questionary.Choice("📊 View Active Downloads", value="status"),
+                questionary.Choice("📊 View & Manage Downloads", value="status"),
+                questionary.Choice("🧹 Clear Completed Downloads", value="clear"),
                 questionary.Choice("📁 Organize Downloads Manually", value="organize"),
                 questionary.Choice("❌ Exit", value="exit")
             ],
@@ -70,8 +110,11 @@ def cli(ctx, file_input):
                 ctx.invoke(download, uri=target)
         elif action == "status":
             ctx.invoke(status)
+        elif action == "clear":
+            ctx.invoke(clear)
         elif action == "organize":
             ctx.invoke(organize)
+
 
 @cli.command()
 @click.pass_context
@@ -90,8 +133,6 @@ def search(ctx, query):
     
     if magnet:
         console.print("\n[bold green]✓ Torrent selected![/]")
-        from .config import load_config
-        from .downloader import add_download
         config = load_config()
         dl_path = config["download_path"]
         console.print(f"Adding download to {dl_path}...")
@@ -99,6 +140,7 @@ def search(ctx, query):
         console.print("Download added to detached aria2 daemon.")
     else:
         console.print("\n[bold yellow]Search cancelled or finished.[/]")
+
 
 @cli.command()
 @click.argument('uri')
@@ -114,55 +156,91 @@ def download(uri):
     except Exception as e:
         click.echo(f"Error adding download: {e}")
 
+
 @cli.command()
-def status():
-    """Show the current download status."""
-    from .downloader import ensure_daemon
+@click.option('--once', is_flag=True, help='Print a static snapshot of downloads and exit.')
+def status(once):
+    """Open the interactive Download Manager viewer (progress, size, pause, delete, clear)."""
     try:
         ensure_daemon()
     except Exception as e:
         click.echo(f"Error starting aria2c: {e}")
         return
 
-    try:
-        import aria2p
-        aria2p_cmd = [sys.executable, "-m", "aria2p", "top"]
-    except ImportError:
-        from .tui import get_binary_path
-        aria2p_cmd = [get_binary_path("aria2p"), "top"]
+    from .tui import show_downloads_tui, build_downloads_view, console
+    if once:
+        downloads = get_all_downloads()
+        console.print(build_downloads_view(downloads, interactive=False, term_width=console.size.width))
+        return
 
-    failed = False
-    try:
-        proc = subprocess.run(aria2p_cmd)
-        if proc.returncode != 0:
-            failed = True
-    except Exception:
-        failed = True
+    show_downloads_tui()
 
-    if failed:
-        # Fallback to rich table if aria2p fails to open or is not available
-        try:
-            from .downloader import get_active_downloads
-            from rich.console import Console
-            from rich.table import Table
-            console = Console()
-            dls = get_active_downloads()
-            if not dls:
-                console.print("[bold yellow]No active downloads.[/]")
-                return
-            table = Table(title="Active Downloads", show_header=True, header_style="bold cyan")
-            table.add_column("GID", style="dim")
-            table.add_column("Name", style="green")
-            table.add_column("Progress", justify="right")
-            table.add_column("Speed", justify="right")
-            table.add_column("Status")
-            for d in dls:
-                speed = d["speed"]
-                speed_str = f"{speed / 1024:.1f} KB/s" if speed < 1024*1024 else f"{speed / (1024*1024):.2f} MB/s"
-                table.add_row(d["gid"], str(d["name"]), f"{d['progress']}%", speed_str, d["status"])
-            console.print(table)
-        except Exception as e:
-            click.echo(f"Error checking download status: {e}")
+
+@cli.command()
+@click.argument('target', required=False, default="all")
+def pause(target):
+    """Pause a specific download (by #, GID, or name) or 'all'."""
+    from rich.console import Console
+    console = Console()
+    try:
+        ensure_daemon()
+        if target.lower() == "all":
+            pause_all_downloads()
+            console.print("[bold yellow]⏸ Todas las descargas activas fueron puestas en pausa.[/]")
+        else:
+            item = _resolve_target_gid(target)
+            pause_download(item["gid"])
+            console.print(f"[bold yellow]⏸ Descarga en pausa:[/] {item['name']} ([dim]{item['gid']}[/])")
+    except Exception as e:
+        console.print(f"[bold red]Error al pausar descarga:[/] {e}")
+
+
+@cli.command()
+@click.argument('target', required=False, default="all")
+def resume(target):
+    """Resume a paused download (by #, GID, or name) or 'all'."""
+    from rich.console import Console
+    console = Console()
+    try:
+        ensure_daemon()
+        if target.lower() == "all":
+            resume_all_downloads()
+            console.print("[bold green]▶ Todas las descargas en pausa fueron reanudadas.[/]")
+        else:
+            item = _resolve_target_gid(target)
+            resume_download(item["gid"])
+            console.print(f"[bold green]▶ Descarga reanudada:[/] {item['name']} ([dim]{item['gid']}[/])")
+    except Exception as e:
+        console.print(f"[bold red]Error al reanudar descarga:[/] {e}")
+
+
+@cli.command()
+@click.argument('target')
+def remove(target):
+    """Remove/delete a specific download (by #, GID, or name)."""
+    from rich.console import Console
+    console = Console()
+    try:
+        ensure_daemon()
+        item = _resolve_target_gid(target)
+        remove_download(item["gid"], delete_files=True)
+        console.print(f"[bold green]🗑 Descarga eliminada:[/] {item['name']} ([dim]{item['gid']}[/])")
+    except Exception as e:
+        console.print(f"[bold red]Error al eliminar descarga:[/] {e}")
+
+
+@cli.command()
+def clear():
+    """Clear all completed downloads from the download viewer."""
+    from rich.console import Console
+    console = Console()
+    try:
+        ensure_daemon()
+        count = clear_completed_downloads()
+        console.print(f"[bold bright_green]✨ Se limpiaron las descargas completadas ({count} eliminada(s) del historial).[/]")
+    except Exception as e:
+        console.print(f"[bold red]Error al limpiar descargas completadas:[/] {e}")
+
 
 @cli.command()
 def organize():
@@ -175,6 +253,7 @@ def organize():
     organize_downloads(dl_path, media_path)
     click.echo("Done.")
 
+
 @cli.command()
 @click.argument('gid')
 @click.argument('num_files')
@@ -186,10 +265,14 @@ def hook(gid, num_files, path):
         media_path = config["media_path"]
         dl_path = config["download_path"]
         
-        # aria2c passes 0 for num_files if the download is a single file, actually the docs say it passes the number of files.
-        # If the download has no files, we do nothing.
         if num_files == "0":
             return
+
+        # Record completed download in persistent history before moving files
+        try:
+            record_completed_download(gid, path)
+        except Exception:
+            pass
             
         from pathlib import Path
         from .organizer import process_item
@@ -222,6 +305,7 @@ def hook(gid, num_files, path):
                 f.write(traceback.format_exc() + "\n")
         except Exception:
             pass
+
 
 if __name__ == '__main__':
     cli()

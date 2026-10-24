@@ -75,11 +75,33 @@ media-manager download archivo.torrent
 ```
 También puedes seleccionar la opción **🧲 Add Magnet Link / Torrent File** en el menú interactivo al ejecutar `media-manager` sin argumentos.
 
-### 3. Ver estado de descargas
+### 3. Visor y gestor interactivo de descargas
 ```bash
 media-manager status
 ```
-Abre la interfaz TUI de `aria2p` (similar a `top`) para ver el progreso de los archivos que se están descargando.
+Abre el visor interactivo de descargas integrado (en tiempo real), donde se visualiza:
+- **Nombre** del torrent o archivo
+- **Estado** (`Activo`, `Pausado (Inactivo)`, `En cola (Inactivo)`, `Completado`, `Error`)
+- **Progreso** (barra visual y porcentaje)
+- **Tamaño** descargado y tamaño total (`MB` / `GB`)
+- **Velocidad**, **Seeds/Peers** y **ETA** (tiempo estimado restante)
+
+**Atajos dentro del visor (`media-manager status`):**
+- `↑` / `↓` (o `1`-`9`): Seleccionar una descarga
+- `P` o `Espacio`: Poner en pausa o reanudar la descarga seleccionada
+- `D` o `Supr`: Eliminar una descarga en particular (con confirmación)
+- `C`: Hacer *clear* (limpiar) todas las descargas completadas
+- `A`: Pausar o reanudar todas las descargas
+- `O`: Organizar descargas manualmente
+- `Q` o `Esc`: Salir del visor
+
+También puedes gestionar las descargas directamente por comandos:
+```bash
+media-manager pause <#|GID|nombre|all>
+media-manager resume <#|GID|nombre|all>
+media-manager remove <#|GID|nombre>
+media-manager clear
+```
 
 ### 4. Organizar las descargas
 ```bash
