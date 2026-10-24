@@ -146,4 +146,19 @@ Escanea `download_path` en busca de descargas completadas y las mueve a `media_p
 - Si encuentra subtítulos (srt, vtt, etc.), los mueve junto a la película o episodio.
 - El resto de archivos (nfo, txt, carpetas vacías) se mueven a `<media_path>/.trash` automáticamente.
 
+## Releases e Instaladores Multiplataforma
+
+El proyecto incluye constructores de instaladores nativos en `packaging/` y un pipeline automatizado en [`.github/workflows/release.yml`](.github/workflows/release.yml) que genera los paquetes al publicar un tag (`v*`):
+
+- **Windows (`packaging/windows/build_windows.ps1`)**:
+  - `dist/MediaManager-Setup-0.2.0-Windows-x64.exe` (Instalador gráfico ejecutable)
+  - `dist/MediaManager-0.2.0-Windows-x64-Portable.zip` (Paquete portable)
+- **Linux (`packaging/linux/build_linux.sh`)**:
+  - `dist/media-manager_0.2.0_amd64.deb` (Debian, Ubuntu, Linux Mint, Pop!_OS)
+  - `dist/media-manager-0.2.0-1.x86_64.rpm` (Fedora, RHEL, CentOS, openSUSE)
+  - `dist/Media_Manager-0.2.0-x86_64.AppImage` (Ejecutable universal autocontenido)
+- **macOS (`packaging/macos/build_macos.sh`)**:
+  - `dist/MediaManager-0.2.0-macOS.dmg` (Imagen de disco con `Media Manager.app`)
+  - `dist/MediaManager-0.2.0-macOS-Installer.pkg` (Instalador del sistema)
+
 *(Nota: En versiones anteriores de esta aplicación había un comando `daemon`, pero ha sido reemplazado por un sistema infinitamente más eficiente usando funciones nativas de `aria2c` bajo eventos (hook `--on-download-complete`), por lo cual todo estará automatizado sin desgastar procesos innecesarios).*

@@ -1,0 +1,149 @@
+name: Build & Publish Multiplatform Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag / Versión del Release (ej. v0.2.0)"
+        required: false
+        default: "v0.2.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Windows (Setup .exe + Portable .zip)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Pillow for icon generation
+        run: pip install pillow
+
+      - name: Build Windows Installer (.exe) and Portable (.zip)
+        shell: pwsh
+        run: .\packaging\windows\build_windows.ps1
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers
+          path: |
+            dist/*.exe
+            dist/*.zip
+
+  build-linux:
+    name: Linux (.deb + .rpm + .AppImage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packaging dependencies (rpm, file, desktop-file-utils, pillow)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm file desktop-file-utils libfuse2
+          pip install pillow
+
+      - name: Build Linux Packages (.deb, .rpm, .AppImage)
+        run: |
+          chmod +x packaging/linux/build_linux.sh
+          ./packaging/linux/build_linux.sh
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installers
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
+
+  build-macos:
+    name: macOS (.dmg + .pkg)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Pillow for icon generation
+        run: pip install pillow
+
+      - name: Build macOS Packages (.dmg, .pkg)
+        run: |
+          chmod +x packaging/macos/build_macos.sh
+          ./packaging/macos/build_macos.sh
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installers
+          path: |
+            dist/*.dmg
+            dist/*.pkg
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all platform installers
+        uses: actions/download-artifact@v4
+        with:
+          path: release_assets
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name != 'main' && github.ref_name || inputs.tag || 'v0.2.0' }}
+          name: "Media Manager ${{ github.ref_name != 'main' && github.ref_name || inputs.tag || 'v0.2.0' }}"
+          generate_release_notes: true
+          body: |
+            ## Media Manager — Aplicación de Escritorio (Flutter GUI) + Terminal (TUI / CLI)
+
+            ### 📦 Instaladores disponibles por sistema operativo
+
+            #### 🪟 Windows (10 / 11 x64)
+            - **`MediaManager-Setup-0.2.0-Windows-x64.exe`**: Instalador gráfico para Windows (permite elegir *Todos los usuarios* o *Usuario actual*, configura `aria2c` en segundo plano y crea los accesos directos en el Escritorio y Menú Inicio).
+            - **`MediaManager-0.2.0-Windows-x64-Portable.zip`**: Paquete portable con instalador por script (`install.ps1`).
+
+            #### 🐧 Linux (x86_64)
+            - **`media-manager_0.2.0_amd64.deb`** *(Debian, Ubuntu, Linux Mint, Pop!_OS)*:
+              ```bash
+              sudo apt install ./media-manager_0.2.0_amd64.deb
+              ```
+            - **`media-manager-0.2.0-1.x86_64.rpm`** *(Fedora, RHEL, CentOS, openSUSE)*:
+              ```bash
+              sudo dnf install ./media-manager-0.2.0-1.x86_64.rpm
+              ```
+            - **`Media_Manager-0.2.0-x86_64.AppImage`** *(Universal para cualquier distribución Linux)*:
+              ```bash
+              chmod +x Media_Manager-0.2.0-x86_64.AppImage
+              ./Media_Manager-0.2.0-x86_64.AppImage
+              ```
+
+            #### 🍎 macOS
+            - **`MediaManager-0.2.0-macOS.dmg`**: Imagen de disco para arrastrar `Media Manager.app` a `/Applications`.
+            - **`MediaManager-0.2.0-macOS-Installer.pkg`**: Paquete instalador nativo de macOS.
+          files: |
+            release_assets/*
