@@ -4,33 +4,52 @@ Herramienta de línea de comandos en Python para buscar, descargar (vía `aria2c
 
 ## Instalación
 
+El instalador permite elegir entre:
+1. **Solo para el usuario actual** (`$HOME` / `%USERPROFILE%`)
+2. **Para todos los usuarios** (`C:\Users\Public` en Windows, `/Users/Shared` en macOS o `/srv/public` en Linux)
+
 ### Windows (PowerShell)
 1. Abre PowerShell en la carpeta del proyecto.
 2. Ejecuta el instalador:
    ```powershell
+   # Pregunta interactivamente el alcance de instalacion (Usuario actual o Todos los usuarios)
    .\install.ps1
+
+   # O especificando el modo directamente:
+   .\install.ps1 -AllUsers
+   .\install.ps1 -CurrentUser
    ```
-   *(El script instalará automáticamente `aria2` mediante WinGet/Chocolatey si no está presente, configurará el entorno virtual con todas las dependencias y agregará `media-manager` al PATH de usuario).*
+   *(El script instalará automáticamente `aria2` mediante WinGet/Chocolatey si no está presente, configurará el entorno virtual con todas las dependencias, creará las carpetas multimedia y agregará `media-manager` al PATH. Cuando se elige `-AllUsers`, toda la estructura `.local`, `.config` y `Media` se instala en `C:\Users\Public` para que cualquier usuario del equipo pueda usarla).*
 
 ### Linux / macOS (Bash)
 1. Clona el repositorio o ubícate en la carpeta `media_manager`.
 2. Ejecuta el instalador:
    ```bash
+   # Interactivo:
    ./install.sh
+
+   # O especificando el modo directamente:
+   ./install.sh --all-users
+   ./install.sh --current-user
    ```
-   *(Instala `aria2` mediante apt/gestor del sistema, configura el venv en `~/.local/share/media_manager/venv` y crea enlaces en `~/.local/bin/`).*
 
 ## Configuración 
 
-La configuración principal se genera automáticamente la primera vez que inicia el programa. Se guardará en:
-- Windows / Linux: `~/.config/media_manager/config.yml`
+La configuración principal se genera automáticamente durante la instalación o la primera vez que inicia el programa:
+- **Instalación para todos los usuarios (Windows):** `C:\Users\Public\.config\media_manager\config.yml`
+- **Instalación por usuario:** `~/.config/media_manager/config.yml`
 
-El archivo de configuración tiene la siguiente estructura por defecto:
+El archivo de configuración tiene la siguiente estructura:
 ```yaml
-download_path: ~/Media/Downloads   # Ruta de descargas provisionales en la carpeta de usuario
-media_path: ~/Media                # Ruta de destino final multimedia en la carpeta de usuario
+# En instalacion para todos los usuarios (Public):
+download_path: C:/Users/Public/Media/Downloads
+media_path: C:/Users/Public/Media
+
+# En instalacion de usuario individual:
+download_path: ~/Media/Downloads
+media_path: ~/Media
 ```
-*(Se expanden automáticamente rutas relativas con `~`, variables como `$HOME` o `%USERPROFILE%`).*
+*(Se expanden automáticamente rutas con `~`, `$HOME`, `$PUBLIC`, `%USERPROFILE%` o `%PUBLIC%`).*
 
 
 ## Uso
@@ -70,9 +89,9 @@ Escanea `download_path` en busca de descargas completadas y las mueve a `media_p
 
 - Usa `guessit` para extraer metadatos del nombre del archivo.
 - Mueve el contenido automáticamente:
-  - **Series:** `$HOME/Media/Shows/<Nombre de Serie>/Season <N>/`
-  - **Películas:** `$HOME/Media/Movies/<Nombre> (<Año>)/`
+  - **Series:** `<media_path>/Shows/<Nombre de Serie>/Season <N>/`
+  - **Películas:** `<media_path>/Movies/<Nombre> (<Año>)/`
 - Si encuentra subtítulos (srt, vtt, etc.), los mueve junto a la película o episodio.
-- El resto de archivos (nfo, txt, carpetas vacías) se mueven a `~/.trash` automáticamente.
+- El resto de archivos (nfo, txt, carpetas vacías) se mueven a `<media_path>/.trash` automáticamente.
 
 *(Nota: En versiones anteriores de esta aplicación había un comando `daemon`, pero ha sido reemplazado por un sistema infinitamente más eficiente usando funciones nativas de `aria2c` bajo eventos (hook `--on-download-complete`), por lo cual todo estará automatizado sin desgastar procesos innecesarios).*

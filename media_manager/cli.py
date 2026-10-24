@@ -2,7 +2,7 @@ import sys
 import click
 import subprocess
 import time
-from .config import load_config
+from .config import load_config, get_config_dir
 from .organizer import organize_downloads
 from .downloader import add_download
 
@@ -214,7 +214,7 @@ def hook(gid, num_files, path):
         import datetime
         import traceback
         try:
-            log_dir = os.path.expanduser("~/.config/media_manager")
+            log_dir = str(get_config_dir())
             os.makedirs(log_dir, exist_ok=True)
             log_file = os.path.join(log_dir, "hook.log")
             with open(log_file, "a", encoding="utf-8") as f:

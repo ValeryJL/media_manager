@@ -2,7 +2,11 @@
 
 set -e
 
-MEDIA_DIR="$HOME/Media"
+if [ -d "/srv/public/Media" ]; then
+    MEDIA_DIR="/srv/public/Media"
+else
+    MEDIA_DIR="$HOME/Media"
+fi
 USER_NAME=$(whoami)
 
 echo "Adding Samba configuration for Media Manager..."
@@ -34,8 +38,8 @@ else
     browsable = yes
     read only = no
     guest ok = yes
-    create mask = 0644
-    directory mask = 0755
+    create mask = 0666
+    directory mask = 0777
     force user = $USER_NAME
 EOL
     echo "Share added to smb.conf!"

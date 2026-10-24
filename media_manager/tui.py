@@ -8,6 +8,7 @@ import questionary
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
+from .config import get_base_dir, get_public_dir
 
 console = Console()
 
@@ -51,12 +52,18 @@ def get_binary_path(name: str) -> str:
         if found:
             return found
             
-    # Check standard media_manager venv
-    venv_dir = Path.home() / ".local" / "share" / "media_manager" / "venv"
-    for sub in ["Scripts", "bin"]:
-        candidate = venv_dir / sub
-        if candidate.exists():
-            found = shutil.which(name, path=str(candidate))
+    # Check standard media_manager venvs (active base_dir, Public, and user home)
+    for base in (get_base_dir(), get_public_dir(), Path.home()):
+        venv_dir = base / ".local" / "share" / "media_manager" / "venv"
+        for sub in ["Scripts", "bin"]:
+            candidate = venv_dir / sub
+            if candidate.exists():
+                found = shutil.which(name, path=str(candidate))
+                if found:
+                    return found
+        local_bin = base / ".local" / "bin"
+        if local_bin.exists():
+            found = shutil.which(name, path=str(local_bin))
             if found:
                 return found
 
