@@ -51,16 +51,16 @@ fi
 echo "Selected mode: $BASE_DIR"
 echo ""
 
-# 1. Install system dependencies if apt is available
-if command -v apt-get &> /dev/null; then
+# 1. Install system dependencies if aria2c is not already installed
+if command -v aria2c &> /dev/null; then
+    echo "[1/6] aria2c found: $(command -v aria2c)"
+elif command -v apt-get &> /dev/null; then
     echo "[1/6] Installing system dependencies (aria2)..."
     sudo apt-get update
     sudo apt-get install -y aria2
 else
     echo "[1/6] Checking aria2..."
-    if ! command -v aria2c &> /dev/null; then
-        echo "Warning: apt-get not found and aria2c is missing. Please install 'aria2' using your package manager."
-    fi
+    echo "Warning: apt-get not found and aria2c is missing. Please install 'aria2' using your package manager."
 fi
 
 # 2. Set up Python virtual environment

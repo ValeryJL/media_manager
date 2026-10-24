@@ -52,7 +52,7 @@ Version: $VERSION
 Section: video
 Priority: optional
 Architecture: $ARCH
-Depends: python3 (>= 3.8), python3-venv, python3-pip, aria2
+Depends: python3 (>= 3.8), python3-venv, aria2
 Maintainer: ValeryJL <valeryjl@users.noreply.github.com>
 Homepage: https://github.com/ValeryJL/media_manager
 Description: Media Manager Desktop GUI (Flutter) & TUI/CLI
@@ -137,12 +137,17 @@ fi
 echo "==> [4/4] Building Universal Linux AppImage (.AppImage)..."
 APPDIR="$DIST_DIR/stage_appimage/Media_Manager.AppDir"
 rm -rf "$APPDIR"
-mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+mkdir -p "$APPDIR/usr/python" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
-python3 -m venv --copies "$APPDIR/usr/venv"
-"$APPDIR/usr/venv/bin/pip" install --upgrade pip --quiet
-"$APPDIR/usr/venv/bin/pip" install pirate-get --quiet
-"$APPDIR/usr/venv/bin/pip" install "$REPO_ROOT" --quiet
+# Bundle the complete base Python runtime (including libpython*.so and stdlib)
+# so the AppImage runs on any Linux distribution regardless of host Python version.
+PY_BASE="$(python3 -c 'import sys; print(sys.base_prefix)')"
+cp -a "$PY_BASE/." "$APPDIR/usr/python/"
+rm -rf "$APPDIR/usr/python/test" "$APPDIR/usr/python/lib/python"*/test 2>/dev/null || true
+
+"$APPDIR/usr/python/bin/python3" -m pip install --upgrade pip --quiet
+"$APPDIR/usr/python/bin/python3" -m pip install pirate-get --quiet
+"$APPDIR/usr/python/bin/python3" -m pip install "$REPO_ROOT" --quiet
 
 cp "$ICONS_DIR/media_manager.png" "$APPDIR/media-manager.png"
 cp "$ICONS_DIR/media_manager.png" "$APPDIR/.DirIcon"
@@ -162,12 +167,14 @@ EOF
 cat << 'EOF' > "$APPDIR/AppRun"
 #!/usr/bin/env bash
 HERE="$(dirname "$(readlink -f "${0}")")"
-export PATH="$HERE/usr/venv/bin:$PATH"
+export PYTHONHOME="$HERE/usr/python"
+export LD_LIBRARY_PATH="$HERE/usr/python/lib:${LD_LIBRARY_PATH:-}"
+export PATH="$HERE/usr/python/bin:$PATH"
 if [ "$1" = "--cli" ]; then
     shift
-    exec "$HERE/usr/venv/bin/python3" -m media_manager.cli "$@"
+    exec "$HERE/usr/python/bin/python3" -m media_manager.cli "$@"
 else
-    exec "$HERE/usr/venv/bin/python3" -m media_manager.gui "$@"
+    exec "$HERE/usr/python/bin/python3" -m media_manager.gui "$@"
 fi
 EOF
 chmod 0755 "$APPDIR/AppRun"
