@@ -167,29 +167,43 @@ def is_downloading(path: Path) -> bool:
                 return True
     return False
 
-def organize_downloads(download_path: str, media_path: str):
+def organize_downloads(download_path: str, media_path: str, quiet: bool = False) -> list:
     """Scan download folder and move completed files to correct media destinations."""
-    if not logger.handlers and not logging.getLogger().handlers:
+    if not quiet and not logger.handlers and not logging.getLogger().handlers:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     dl_dir = Path(download_path)
     media_dir = Path(media_path)
     trash_dir = media_dir / ".trash"
+    report = []
 
     if not dl_dir.exists():
-        logger.error(f"Download path {dl_dir} does not exist.")
-        return
+        if not quiet:
+            logger.error(f"Download path {dl_dir} does not exist.")
+        return report
 
     for item in dl_dir.iterdir():
         # Skip hidden files (.aria2 control files etc.)
-        if item.name.startswith("."):
+        if item.name.startswith(".") or item.suffix == ".aria2":
             continue
         if is_downloading(item):
-            logger.info(f"Skipping {item.name}: still downloading (.aria2 found).")
+            if not quiet:
+                logger.info(f"Skipping {item.name}: still downloading (.aria2 found).")
+            report.append({
+                "name": item.name,
+                "kind": "downloading",
+                "target": "-",
+                "status": "downloading",
+            })
             continue
 
-        logger.info(f"Processing {item.name}...")
-        process_item(item, media_dir, trash_dir)
+        if not quiet:
+            logger.info(f"Processing {item.name}...")
+        item_events = process_item(item, media_dir, trash_dir)
+        if item_events:
+            report.extend(item_events)
+
+    return report
 
 def safe_move(src: Path, dest_dir: Path) -> bool:
     """
@@ -210,12 +224,25 @@ def safe_move(src: Path, dest_dir: Path) -> bool:
         logger.warning(f"Skipping {src.name}: file is locked or currently in use.")
         return False
 
-def process_item(item: Path, media_dir: Path, trash_dir: Path):
+def _rel_dest_str(dest_dir: Path, media_dir: Path) -> str:
+    try:
+        return str(dest_dir.resolve().relative_to(media_dir.resolve()))
+    except Exception:
+        return str(dest_dir)
+
+def process_item(item: Path, media_dir: Path, trash_dir: Path) -> list:
     """Process a single completed file or directory from the downloads folder."""
+    events = []
     # Safety: never process something that is still downloading
     if is_downloading(item):
         logger.warning(f"Aborting process of {item.name}: .aria2 control file found.")
-        return
+        events.append({
+            "name": item.name,
+            "kind": "downloading",
+            "target": "-",
+            "status": "downloading",
+        })
+        return events
 
     files_to_process = []
 
@@ -241,12 +268,19 @@ def process_item(item: Path, media_dir: Path, trash_dir: Path):
     if not media_files:
         logger.info(f"No media files found in {item.name}. Moving to trash.")
         move_to_trash(item, trash_dir)
-        return
+        events.append({
+            "name": item.name,
+            "kind": "trash",
+            "target": ".trash",
+            "status": "trashed",
+        })
+        return events
 
     for media_file in media_files:
         guess = guess_media_info(media_file, item)
+        is_ep = guess.get("type") == "episode"
 
-        if guess.get("type") == "episode":
+        if is_ep:
             raw_title = extract_single_value(guess.get("title"), "Unknown Series")
             title = sanitize_title(raw_title).title() or "Unknown Series"
             title = clean_filename(title)
@@ -266,7 +300,13 @@ def process_item(item: Path, media_dir: Path, trash_dir: Path):
             folder = clean_filename(folder)
             dest_folder = media_dir / "Movies" / folder
 
-        safe_move(media_file, dest_folder)
+        moved = safe_move(media_file, dest_folder)
+        events.append({
+            "name": media_file.name,
+            "kind": "episode" if is_ep else "movie",
+            "target": _rel_dest_str(dest_folder, media_dir),
+            "status": "moved" if moved else "skipped",
+        })
 
         # Move matching subtitles to the same destination
         media_stem = media_file.stem.lower()
@@ -282,7 +322,13 @@ def process_item(item: Path, media_dir: Path, trash_dir: Path):
                 matched = True
 
             if matched:
-                safe_move(sub, dest_folder)
+                sub_moved = safe_move(sub, dest_folder)
+                events.append({
+                    "name": sub.name,
+                    "kind": "subtitle",
+                    "target": _rel_dest_str(dest_folder, media_dir),
+                    "status": "moved" if sub_moved else "skipped",
+                })
                 sub_files.remove(sub)
 
     # Move any remaining subtitles to their guessed destinations
@@ -305,12 +351,24 @@ def process_item(item: Path, media_dir: Path, trash_dir: Path):
             sub_folder = f"{sub_title} ({sub_year})" if sub_year else sub_title
             sub_folder = clean_filename(sub_folder)
             sub_dest = media_dir / "Movies" / sub_folder
-        safe_move(sub, sub_dest)
+        sub_moved = safe_move(sub, sub_dest)
+        events.append({
+            "name": sub.name,
+            "kind": "subtitle",
+            "target": _rel_dest_str(sub_dest, media_dir),
+            "status": "moved" if sub_moved else "skipped",
+        })
         sub_files.remove(sub)
 
     # Move remaining other files to trash (empty dirs, NFOs, etc.)
     for other in other_files:
         move_to_trash(other, trash_dir)
+        events.append({
+            "name": other.name,
+            "kind": "trash",
+            "target": ".trash",
+            "status": "trashed",
+        })
 
     # If the original download was a directory, try to clean it up
     if item.is_dir():
@@ -325,6 +383,8 @@ def process_item(item: Path, media_dir: Path, trash_dir: Path):
                 move_to_trash(item, trash_dir)
         except Exception as e:
             logger.warning(f"Could not clean up {item}: {e}")
+
+    return events
 
 def move_to_trash(item: Path, trash_dir: Path):
     """Move a file or folder to the trash directory. Never overwrites existing trash items."""
@@ -345,4 +405,3 @@ def move_to_trash(item: Path, trash_dir: Path):
         logger.warning(f"Could not move {item} to trash: file is locked or in use.")
     except Exception as e:
         logger.error(f"Failed to move {item} to trash: {e}")
-

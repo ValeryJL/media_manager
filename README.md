@@ -54,13 +54,19 @@ media_path: ~/Media
 
 ## Uso
 
-El ejecutable se llama `media-manager` y proporciona los siguientes comandos:
+El ejecutable se llama `media-manager`. Al ejecutarlo sin argumentos (`media-manager`), abre el **Panel Principal Interactivo** con métricas en tiempo real del daemon `aria2c` y acceso rápido por teclado (`↑/↓`, `1-6`, `B` Buscar, `V` Visor de descargas, `M` Agregar magnet, `O` Organizar, `C` Limpiar completados).
 
-### 1. Buscar y descargar
+También proporciona los siguientes comandos directos:
+
+### 1. Buscador interactivo de torrents
 ```bash
 media-manager search "Query de búsqueda"
 ```
-Abrirá la interfaz de `pirate-get` para buscar torrents. Al elegir uno, se enviará el enlace magnet o torrent automáticamente al daemon de `aria2c` bajo la ruta de descargas (en modo *detached*).
+Abre el **Buscador de Torrents TUI**, donde puedes:
+- Navegar resultados paginados con `↑` / `↓` / `PgUp` / `PgDn` viendo salud de seeds (`Excelente`, `Buena`, `Baja`), tamaño, seeders, leechers, fecha e inspector completo abajo.
+- Presionar `Espacio` para **marcar múltiples torrents (`☑`)** (por ejemplo, varias temporadas o episodios a la vez) y `Enter` para enviarlos todos a descargar.
+- Presionar `O` para cambiar el orden en vivo (**Seeders**, **Tamaño** o **Nombre**).
+- Presionar `N` para realizar una nueva búsqueda sin salir de la interfaz.
 
 ### 2. Pegar enlaces Magnet o abrir archivos .torrent
 Puedes agregar descargas directamente indicando la opción `-f` o el comando `download`:
@@ -73,7 +79,7 @@ media-manager -f "magnet:?xt=urn:btih:..."
 media-manager download "magnet:?xt=urn:btih:..."
 media-manager download archivo.torrent
 ```
-También puedes seleccionar la opción **🧲 Add Magnet Link / Torrent File** en el menú interactivo al ejecutar `media-manager` sin argumentos.
+También puedes presionar `M` (o la opción `3`) en el Panel Principal al ejecutar `media-manager` sin argumentos (soporta pegar con `Ctrl+V` o clic derecho).
 
 ### 3. Visor y gestor interactivo de descargas
 ```bash

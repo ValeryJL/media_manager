@@ -1,9 +1,6 @@
 import sys
 import click
 from .config import load_config, get_config_dir
-from .tui import _ensure_utf8_console
-
-_ensure_utf8_console()
 from .organizer import organize_downloads
 from .downloader import (
     add_download,
@@ -17,6 +14,18 @@ from .downloader import (
     clear_completed_downloads,
     record_completed_download,
 )
+from .tui import (
+    _ensure_utf8_console,
+    console,
+    show_main_menu_tui,
+    show_downloads_tui,
+    search_torrents_tui,
+    build_downloads_view,
+    build_organize_view,
+    print_notification_panel,
+)
+
+_ensure_utf8_console()
 
 
 def _resolve_target_gid(identifier: str) -> dict:
@@ -54,66 +63,29 @@ def cli(ctx, file_input):
     if file_input:
         config = load_config()
         dl_path = config["download_path"]
-        from rich.console import Console
-        console = Console()
-        console.print(f"Adding download to [cyan]{dl_path}[/]...")
         try:
-            add_download(file_input, dl_path)
-            console.print("[bold green]✓ Download added successfully to detached aria2 daemon.[/]")
+            gid = add_download(file_input, dl_path, quiet=True)
+            print_notification_panel(
+                "Nueva Descarga",
+                "[bold bright_green]✔ Descarga agregada correctamente al daemon aria2c en segundo plano.[/]",
+                details=[
+                    ("GID", f"[bold white]{gid}[/]"),
+                    ("Origen", f"[white]{file_input[:80] + ('...' if len(file_input) > 80 else '')}[/]"),
+                    ("Carpeta de descarga", f"[cyan]{dl_path}[/]"),
+                ],
+                border_style="bright_green",
+                footer_tip="Ejecutá 'media-manager status' para ver el progreso en tiempo real.",
+            )
         except Exception as e:
-            console.print(f"[bold red]Error adding download:[/] {e}")
+            print_notification_panel(
+                "Error al Agregar Descarga",
+                f"[bold red]✖ No se pudo agregar la descarga:[/] {e}",
+                border_style="red",
+            )
         return
 
     if ctx.invoked_subcommand is None:
-        # No command was passed, show the main interactive menu
-        try:
-            ensure_daemon()
-        except Exception:
-            pass
-
-        import questionary
-        from rich.console import Console
-        console = Console()
-        
-        console.print("[bold magenta]🎬 Welcome to Media Manager[/bold magenta]\n")
-        
-        action = questionary.select(
-            "What would you like to do?",
-            choices=[
-                questionary.Choice("🔍 Search for Media", value="search"),
-                questionary.Choice("🧲 Add Magnet Link / Torrent File", value="add"),
-                questionary.Choice("📊 View & Manage Downloads", value="status"),
-                questionary.Choice("🧹 Clear Completed Downloads", value="clear"),
-                questionary.Choice("📁 Organize Downloads Manually", value="organize"),
-                questionary.Choice("❌ Exit", value="exit")
-            ],
-            style=questionary.Style([
-                ('qmark', 'fg:#ff9d00 bold'),
-                ('question', 'bold'),
-                ('answer', 'fg:#ff9d00 bold'),
-                ('pointer', 'fg:#ff9d00 bold'),
-                ('highlighted', 'fg:#ff9d00 bold'),
-                ('selected', 'fg:#cc5454'),
-            ])
-        ).ask()
-        
-        if action == "exit" or action is None:
-            return
-            
-        if action == "search":
-            query = questionary.text("Enter your search query:").ask()
-            if query:
-                ctx.invoke(search, query=(query,))
-        elif action == "add":
-            target = questionary.text("Enter magnet link or path to .torrent file:").ask()
-            if target:
-                ctx.invoke(download, uri=target)
-        elif action == "status":
-            ctx.invoke(status)
-        elif action == "clear":
-            ctx.invoke(clear)
-        elif action == "organize":
-            ctx.invoke(organize)
+        show_main_menu_tui()
 
 
 @cli.command()
@@ -122,24 +94,41 @@ def cli(ctx, file_input):
 def search(ctx, query):
     """Search for torrents and assign them to the downloader."""
     if not query:
-        click.echo("Please provide a search query.")
+        print_notification_panel(
+            "Buscador de Torrents",
+            "[bold yellow]⚠ Por favor indicá un término de búsqueda (ej. 'media-manager search Dexter').[/]",
+            border_style="yellow",
+        )
         return
+
     query_str = " ".join(query)
-    from .tui import search_interactive
-    from rich.console import Console
-    console = Console()
-    
-    magnet = search_interactive(query_str)
-    
-    if magnet:
-        console.print("\n[bold green]✓ Torrent selected![/]")
+    chosen = search_torrents_tui(query_str)
+
+    if chosen:
         config = load_config()
         dl_path = config["download_path"]
-        console.print(f"Adding download to {dl_path}...")
-        add_download(magnet, dl_path)
-        console.print("Download added to detached aria2 daemon.")
+        added_details = []
+        for item in chosen:
+            try:
+                gid = add_download(item["magnet"], dl_path, quiet=True)
+                added_details.append((item["name"], f"[bold bright_green]GID: {gid}[/] [dim]({item['size']})[/]"))
+            except Exception as e:
+                added_details.append((item["name"], f"[bold red]Error: {e}[/]"))
+
+        added_Details_with_dir = added_details + [("Carpeta destino", f"[cyan]{dl_path}[/]")]
+        print_notification_panel(
+            "Descargas Agregadas",
+            f"[bold bright_green]✔ Se enviaron {len(chosen)} torrent(s) al daemon de aria2c.[/]",
+            details=added_Details_with_dir,
+            border_style="bright_green",
+            footer_tip="Ejecutá 'media-manager status' para ver el progreso y gestionar las descargas.",
+        )
     else:
-        console.print("\n[bold yellow]Search cancelled or finished.[/]")
+        print_notification_panel(
+            "Buscador de Torrents",
+            "[dim]Búsqueda cancelada o finalizada sin seleccionar descargas.[/]",
+            border_style="cyan",
+        )
 
 
 @cli.command()
@@ -148,13 +137,26 @@ def download(uri):
     """Command to add a download (magnet link, URL, or .torrent file)."""
     config = load_config()
     dl_path = config["download_path"]
-    
-    click.echo(f"Adding download to {dl_path}...")
+
     try:
-        add_download(uri, dl_path)
-        click.echo("Download added to detached aria2 daemon.")
+        gid = add_download(uri, dl_path, quiet=True)
+        print_notification_panel(
+            "Nueva Descarga",
+            "[bold bright_green]✔ Descarga agregada correctamente al daemon aria2c en segundo plano.[/]",
+            details=[
+                ("GID", f"[bold white]{gid}[/]"),
+                ("Origen", f"[white]{uri[:80] + ('...' if len(uri) > 80 else '')}[/]"),
+                ("Carpeta de descarga", f"[cyan]{dl_path}[/]"),
+            ],
+            border_style="bright_green",
+            footer_tip="Ejecutá 'media-manager status' para ver el progreso en tiempo real.",
+        )
     except Exception as e:
-        click.echo(f"Error adding download: {e}")
+        print_notification_panel(
+            "Error al Agregar Descarga",
+            f"[bold red]✖ No se pudo agregar la descarga:[/] {e}",
+            border_style="red",
+        )
 
 
 @cli.command()
@@ -162,12 +164,15 @@ def download(uri):
 def status(once):
     """Open the interactive Download Manager viewer (progress, size, pause, delete, clear)."""
     try:
-        ensure_daemon()
+        ensure_daemon(quiet=True)
     except Exception as e:
-        click.echo(f"Error starting aria2c: {e}")
+        print_notification_panel(
+            "Error de Daemon",
+            f"[bold red]✖ No se pudo iniciar aria2c:[/] {e}",
+            border_style="red",
+        )
         return
 
-    from .tui import show_downloads_tui, build_downloads_view, console
     if once:
         downloads = get_all_downloads()
         console.print(build_downloads_view(downloads, interactive=False, term_width=console.size.width))
@@ -180,66 +185,96 @@ def status(once):
 @click.argument('target', required=False, default="all")
 def pause(target):
     """Pause a specific download (by #, GID, or name) or 'all'."""
-    from rich.console import Console
-    console = Console()
     try:
-        ensure_daemon()
+        ensure_daemon(quiet=True)
         if target.lower() == "all":
             pause_all_downloads()
-            console.print("[bold yellow]⏸ Todas las descargas activas fueron puestas en pausa.[/]")
+            print_notification_panel(
+                "Gestión de Descargas",
+                "[bold yellow]⏸ Todas las descargas activas fueron puestas en pausa.[/]",
+                border_style="yellow",
+            )
         else:
             item = _resolve_target_gid(target)
             pause_download(item["gid"])
-            console.print(f"[bold yellow]⏸ Descarga en pausa:[/] {item['name']} ([dim]{item['gid']}[/])")
+            print_notification_panel(
+                "Gestión de Descargas",
+                "[bold yellow]⏸ Descarga puesta en pausa correctamente.[/]",
+                details=[
+                    ("Nombre", f"[white]{item['name']}[/]"),
+                    ("GID", f"[dim]{item['gid']}[/]"),
+                    ("Estado", "[bold yellow]⏸ Inactivo (Pausa)[/]"),
+                ],
+                border_style="yellow",
+            )
     except Exception as e:
-        console.print(f"[bold red]Error al pausar descarga:[/] {e}")
+        print_notification_panel("Error al Pausar", f"[bold red]✖ {e}[/]", border_style="red")
 
 
 @cli.command()
 @click.argument('target', required=False, default="all")
 def resume(target):
     """Resume a paused download (by #, GID, or name) or 'all'."""
-    from rich.console import Console
-    console = Console()
     try:
-        ensure_daemon()
+        ensure_daemon(quiet=True)
         if target.lower() == "all":
             resume_all_downloads()
-            console.print("[bold green]▶ Todas las descargas en pausa fueron reanudadas.[/]")
+            print_notification_panel(
+                "Gestión de Descargas",
+                "[bold bright_green]▶ Todas las descargas en pausa fueron reanudadas.[/]",
+                border_style="bright_green",
+            )
         else:
             item = _resolve_target_gid(target)
             resume_download(item["gid"])
-            console.print(f"[bold green]▶ Descarga reanudada:[/] {item['name']} ([dim]{item['gid']}[/])")
+            print_notification_panel(
+                "Gestión de Descargas",
+                "[bold bright_green]▶ Descarga reanudada correctamente.[/]",
+                details=[
+                    ("Nombre", f"[white]{item['name']}[/]"),
+                    ("GID", f"[dim]{item['gid']}[/]"),
+                    ("Estado", "[bold green]● Activo[/]"),
+                ],
+                border_style="bright_green",
+            )
     except Exception as e:
-        console.print(f"[bold red]Error al reanudar descarga:[/] {e}")
+        print_notification_panel("Error al Reanudar", f"[bold red]✖ {e}[/]", border_style="red")
 
 
 @cli.command()
 @click.argument('target')
 def remove(target):
     """Remove/delete a specific download (by #, GID, or name)."""
-    from rich.console import Console
-    console = Console()
     try:
-        ensure_daemon()
+        ensure_daemon(quiet=True)
         item = _resolve_target_gid(target)
         remove_download(item["gid"], delete_files=True)
-        console.print(f"[bold green]🗑 Descarga eliminada:[/] {item['name']} ([dim]{item['gid']}[/])")
+        print_notification_panel(
+            "Gestión de Descargas",
+            "[bold bright_green]🗑 Descarga eliminada correctamente.[/]",
+            details=[
+                ("Nombre", f"[white]{item['name']}[/]"),
+                ("GID", f"[dim]{item['gid']}[/]"),
+            ],
+            border_style="bright_green",
+        )
     except Exception as e:
-        console.print(f"[bold red]Error al eliminar descarga:[/] {e}")
+        print_notification_panel("Error al Eliminar", f"[bold red]✖ {e}[/]", border_style="red")
 
 
 @cli.command()
 def clear():
     """Clear all completed downloads from the download viewer."""
-    from rich.console import Console
-    console = Console()
     try:
-        ensure_daemon()
+        ensure_daemon(quiet=True)
         count = clear_completed_downloads()
-        console.print(f"[bold bright_green]✨ Se limpiaron las descargas completadas ({count} eliminada(s) del historial).[/]")
+        print_notification_panel(
+            "Limpieza de Historial",
+            f"[bold bright_green]✨ Se limpiaron las descargas completadas ({count} entrada(s) eliminada(s)).[/]",
+            border_style="bright_green",
+        )
     except Exception as e:
-        console.print(f"[bold red]Error al limpiar descargas completadas:[/] {e}")
+        print_notification_panel("Error al Limpiar", f"[bold red]✖ {e}[/]", border_style="red")
 
 
 @cli.command()
@@ -248,10 +283,9 @@ def organize():
     config = load_config()
     dl_path = config["download_path"]
     media_path = config["media_path"]
-    
-    click.echo(f"Organizing downloads from {dl_path} into {media_path}...")
-    organize_downloads(dl_path, media_path)
-    click.echo("Done.")
+
+    report = organize_downloads(dl_path, media_path, quiet=True)
+    console.print(build_organize_view(report, dl_path, media_path, term_width=console.size.width))
 
 
 @cli.command()

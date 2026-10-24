@@ -383,7 +383,7 @@ def _start_daemon():
         f.write("ok\n")
 
 
-def ensure_daemon():
+def ensure_daemon(quiet: bool = False):
     """
     Ensure aria2c is running with the hook and session persistence registered,
     and recover any incomplete downloads left by another user session.
@@ -391,14 +391,16 @@ def ensure_daemon():
     _register_windows_autostart()
     if _daemon_running():
         if not _hook_known_registered():
-            print("Restarting aria2c to register background hook...")
+            if not quiet:
+                print("Restarting aria2c to register background hook...")
             _kill_aria2c()
             _start_daemon()
     else:
         state_file = os.path.join(os.path.normpath(str(get_config_dir())), ".hook_registered")
         if os.path.exists(state_file):
             os.remove(state_file)
-        print("Starting aria2c daemon...")
+        if not quiet:
+            print("Starting aria2c daemon...")
         _start_daemon()
 
     if not _daemon_running():
@@ -407,8 +409,8 @@ def ensure_daemon():
     recover_incomplete_downloads()
 
 
-def add_download(target: str, download_path: str):
-    ensure_daemon()
+def add_download(target: str, download_path: str, quiet: bool = False):
+    ensure_daemon(quiet=quiet)
     target = target.strip("'\" \t\r\n")
     if not target:
         raise ValueError("No magnet link or torrent file path provided.")
@@ -438,7 +440,8 @@ def add_download(target: str, download_path: str):
         pass
 
     gid = response.get("result", "?")
-    print(f"Added download: {gid}")
+    if not quiet:
+        print(f"Added download: {gid}")
     return gid
 
 
