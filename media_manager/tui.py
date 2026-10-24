@@ -1380,11 +1380,18 @@ MENU_ITEMS = [
         "shortcut": "[5 / C]",
     },
     {
+        "id": "gui",
+        "icon": "🖥️",
+        "title": "Abrir App de Escritorio (GUI Flutter)",
+        "desc": "Abrir la interfaz gráfica moderna multiplataforma en una ventana nativa",
+        "shortcut": "[6 / G]",
+    },
+    {
         "id": "exit",
         "icon": "❌",
         "title": "Salir",
         "desc": "Cerrar Media Manager (las descargas siguen en segundo plano)",
-        "shortcut": "[6 / Q]",
+        "shortcut": "[7 / Q]",
     },
 ]
 
@@ -1479,11 +1486,12 @@ def build_main_menu_view(
         footer_lines.append(f"\n{feedback_msg}")
 
     controls_line = (
-        "[bold cyan][↑/↓ / 1-6][/] Seleccionar   "
+        "[bold cyan][↑/↓ / 1-7][/] Seleccionar   "
         "[bold bright_green][Enter][/] Abrir   "
         "[bold yellow][B][/] Buscar   "
-        "[bold magenta][V][/] Visor Descargas   "
-        "[bold blue][M][/] Agregar Magnet   "
+        "[bold magenta][V][/] Visor   "
+        "[bold blue][M][/] Magnet   "
+        "[bold bright_cyan][G][/] App GUI   "
         "[bold white][Q / Esc][/] Salir"
     )
     footer_lines.append("\n" + controls_line)
@@ -1577,6 +1585,12 @@ def show_main_menu_tui():
                 set_feedback(f"[bold bright_green]✨ Se limpiaron {cleared_n} descarga(s) completada(s).[/]")
                 downloads = get_all_downloads()
                 last_fetch = time.monotonic()
+        elif action_id == "gui":
+            from .gui import spawn_gui_detached
+            if spawn_gui_detached():
+                set_feedback("[bold bright_cyan]🖥️ Abriendo Aplicación de Escritorio Media Manager (Flutter)...[/]")
+            else:
+                set_feedback("[bold red]✖ No se pudo abrir la interfaz gráfica.[/]")
         return True
 
     try:
@@ -1684,7 +1698,7 @@ def show_main_menu_tui():
                     selected_idx = 0
                 elif key == "END":
                     selected_idx = len(MENU_ITEMS) - 1
-                elif key in ("1", "2", "3", "4", "5", "6"):
+                elif key in ("1", "2", "3", "4", "5", "6", "7"):
                     selected_idx = int(key) - 1
                     if not execute_menu_action(MENU_ITEMS[selected_idx]["id"], live):
                         break
@@ -1703,6 +1717,9 @@ def show_main_menu_tui():
                 elif key == "c":
                     selected_idx = 4
                     execute_menu_action("clear", live)
+                elif key == "g":
+                    selected_idx = 5
+                    execute_menu_action("gui", live)
                 elif key == "ENTER":
                     if not execute_menu_action(MENU_ITEMS[selected_idx]["id"], live):
                         break

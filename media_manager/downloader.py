@@ -24,9 +24,13 @@ _STATE_FILE  = os.path.join(_CONFIG_DIR, ".hook_registered")
 
 
 def get_hook_path() -> str:
-    """Return the absolute path to the event hook script/executable."""
+    """Return the absolute path to the event hook executable/script."""
     cfg_dir = os.path.normpath(str(get_config_dir()))
     if os.name == "nt":
+        py_dir = os.path.dirname(sys.executable)
+        pyw_exe = os.path.join(py_dir, "pythonw.exe")
+        if os.path.exists(pyw_exe):
+            return os.path.abspath(pyw_exe)
         return os.path.join(cfg_dir, "hook.bat")
     return os.path.join(cfg_dir, "hook.sh")
 
@@ -221,19 +225,55 @@ def create_hook_script() -> str:
     os.makedirs(cfg_dir, exist_ok=True)
     py_exe = sys.executable
     if os.name == "nt":
-        # Remove legacy hook.exe if present to avoid Windows App Control (Smart App Control / WDAC) violations
-        old_hook_exe = os.path.join(cfg_dir, "hook.exe")
-        if os.path.exists(old_hook_exe):
-            try:
-                os.remove(old_hook_exe)
-            except Exception:
-                pass
+        # Remove legacy hook.exe and hook.bat so cmd.exe never flashes a console window
+        for legacy_name in ("hook.exe", "hook.bat"):
+            legacy_file = os.path.join(cfg_dir, legacy_name)
+            if os.path.exists(legacy_file):
+                try:
+                    os.remove(legacy_file)
+                except Exception:
+                    pass
 
-        bat_path = os.path.join(cfg_dir, "hook.bat")
         dir_name = os.path.dirname(py_exe)
         pyw_exe = os.path.join(dir_name, "pythonw.exe")
-        runner = pyw_exe if os.path.exists(pyw_exe) else py_exe
-        content = f'@echo off\r\nstart "" /B "{runner}" -m media_manager.cli hook "%~1" "%~2" "%~3"\r\n'
+        if os.path.exists(pyw_exe):
+            # Install sitecustomize.py inside the venv's site-packages so pythonw.exe (a signed
+            # Windows GUI-subsystem binary that never creates a console window) directly handles
+            # aria2c's "<pythonw.exe> <GID> <num_files> <file_path>" hook invocation.
+            base_dir_str = str(get_base_dir()).replace("\\", "\\\\")
+            sc_code = (
+                "import os\n"
+                "import re\n"
+                "import sys\n\n"
+                "_orig = getattr(sys, 'orig_argv', [])\n"
+                "if len(_orig) == 4 and re.fullmatch(r'[0-9a-fA-F]{16}', _orig[1]) and _orig[2].isdigit():\n"
+                "    try:\n"
+                "        if sys.stdout is None:\n"
+                "            sys.stdout = open(os.devnull, 'w', encoding='utf-8')\n"
+                "        if sys.stderr is None:\n"
+                "            sys.stderr = open(os.devnull, 'w', encoding='utf-8')\n"
+                f"        os.environ.setdefault('MEDIA_MANAGER_HOME', '{base_dir_str}')\n"
+                "        from media_manager.cli import hook\n"
+                "        hook.callback(_orig[1], _orig[2], _orig[3])\n"
+                "    except Exception:\n"
+                "        pass\n"
+                "    os._exit(0)\n"
+            )
+            import site
+            sp_dirs = [p for p in site.getsitepackages() if p.lower().endswith("site-packages")]
+            if not sp_dirs:
+                sp_dirs = [os.path.join(os.path.dirname(dir_name), "Lib", "site-packages")]
+            for sp in sp_dirs:
+                try:
+                    os.makedirs(sp, exist_ok=True)
+                    with open(os.path.join(sp, "sitecustomize.py"), "w", encoding="utf-8") as f:
+                        f.write(sc_code)
+                except Exception:
+                    pass
+            return os.path.abspath(pyw_exe)
+
+        bat_path = os.path.join(cfg_dir, "hook.bat")
+        content = f'@echo off\r\nstart "" /B "{py_exe}" -m media_manager.cli hook "%~1" "%~2" "%~3"\r\n'
         with open(bat_path, "w", encoding="utf-8") as f:
             f.write(content)
         return bat_path

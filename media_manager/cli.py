@@ -289,6 +289,51 @@ def organize():
 
 
 @cli.command()
+@click.argument('uri', required=False, default=None)
+@click.option('--install-shortcut', is_flag=True, help='Install or update the system Desktop / Start Menu shortcut.')
+@click.option('--wait', is_flag=True, help='Run the GUI in the foreground instead of detaching.')
+def gui(uri, install_shortcut, wait):
+    """Launch the cross-platform Flutter Desktop GUI application."""
+    from .gui import launch_gui, spawn_gui_detached, install_desktop_shortcut
+
+    if install_shortcut:
+        paths = install_desktop_shortcut()
+        if paths:
+            details = [(f"Acceso directo {i + 1}", f"[cyan]{p}[/]") for i, p in enumerate(paths)]
+            print_notification_panel(
+                "Instalación de App de Escritorio",
+                "[bold bright_green]✔ Aplicación Media Manager registrada en el sistema correctamente.[/]",
+                details=details,
+                border_style="bright_green",
+                footer_tip="Ya podés abrir 'Media Manager' desde el Menú Inicio, Escritorio o lanzador del sistema.",
+            )
+        else:
+            print_notification_panel(
+                "Error de Acceso Directo",
+                "[bold red]✖ No se pudieron crear los accesos directos en el sistema.[/]",
+                border_style="red",
+            )
+        return
+
+    if wait:
+        launch_gui(initial_uri=uri)
+    else:
+        if spawn_gui_detached(initial_uri=uri):
+            print_notification_panel(
+                "Media Manager Desktop GUI (Flutter)",
+                "[bold bright_green]🖥️ Ventana de escritorio iniciada en segundo plano.[/]",
+                details=[
+                    ("Motor gráfico", "[bold bright_cyan]Flutter Desktop (Flet)[/]"),
+                    ("Daemon RPC", "[bold green]aria2c (localhost:6800)[/]"),
+                ],
+                border_style="bright_green",
+                footer_tip="Podés cerrar esta terminal; la aplicación de escritorio seguirá abierta de forma independiente.",
+            )
+        else:
+            launch_gui(initial_uri=uri)
+
+
+@cli.command()
 @click.argument('gid')
 @click.argument('num_files')
 @click.argument('path')

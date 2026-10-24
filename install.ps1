@@ -219,17 +219,16 @@ if ($installAllUsers -and ($BASE_DIR -ne $HOME)) {
     }
 }
 
-# Generar hook silencioso para eventos de aria2c
-Write-Host "Configurando hook silencioso en segundo plano..." -ForegroundColor Yellow
+# Generar hook silencioso para eventos de aria2c (usando pythonw.exe sin ventana de consola)
+Write-Host "Configurando hook silencioso en segundo plano (sin ventana de consola)..." -ForegroundColor Yellow
 $env:MEDIA_MANAGER_HOME = $BASE_DIR
-& $VENV_PYTHON -c "from media_manager.downloader import create_hook_script; create_hook_script()"
-$hookBat = Join-Path $configDir "hook.bat"
-if (Test-Path $hookBat) {
-    Write-Host "[OK] Hook silencioso en segundo plano listo en '$hookBat'." -ForegroundColor Green
-}
-$oldHookExe = Join-Path $configDir "hook.exe"
-if (Test-Path $oldHookExe) {
-    Remove-Item -Path $oldHookExe -Force -ErrorAction SilentlyContinue
+$hookTarget = (& $VENV_PYTHON -c "from media_manager.downloader import create_hook_script; print(create_hook_script())").Trim()
+Write-Host "[OK] Hook silencioso configurado con '$hookTarget'." -ForegroundColor Green
+foreach ($oldFile in @("hook.exe", "hook.bat")) {
+    $oldPath = Join-Path $configDir $oldFile
+    if (Test-Path $oldPath) {
+        Remove-Item -Path $oldPath -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # Iniciar o recargar daemon de aria2c con el hook silencioso
@@ -243,11 +242,22 @@ Write-Host "[6/6] Configurando wrappers y variables de entorno PATH..." -Foregro
 $cmdWrapper = Join-Path $localBin "media-manager.cmd"
 Set-Content -Path $cmdWrapper -Value "@echo off`r`n`"$VENV_PYTHON`" -m media_manager.cli %*" -Encoding ASCII
 
+$pywExeForGui = Join-Path $SCRIPTS_DIR "pythonw.exe"
+$guiRunnerExe = if (Test-Path $pywExeForGui) { $pywExeForGui } else { $VENV_PYTHON }
+$guiWrapper = Join-Path $localBin "media-manager-gui.cmd"
+Set-Content -Path $guiWrapper -Value "@echo off`r`nstart `"`" `"$guiRunnerExe`" -m media_manager.gui %*" -Encoding ASCII
+
 $pirateWrapper = Join-Path $localBin "pirate-get.cmd"
 Set-Content -Path $pirateWrapper -Value "@echo off`r`n`"$VENV_PYTHON`" -m pirate.pirate %*" -Encoding ASCII
 
 $aria2pWrapper = Join-Path $localBin "aria2p.cmd"
 Set-Content -Path $aria2pWrapper -Value "@echo off`r`n`"$VENV_PYTHON`" -m aria2p %*" -Encoding ASCII
+
+# Registrar aplicacion de escritorio (Menu Inicio y Escritorio) con icono personalizado
+Write-Host "Instalando aplicacion de escritorio Media Manager (Flutter GUI) en el sistema..." -ForegroundColor Yellow
+$allUsersPyBool = if ($installAllUsers) { "True" } else { "False" }
+& $VENV_PYTHON -c "from media_manager.gui import install_desktop_shortcut; install_desktop_shortcut($allUsersPyBool)"
+Write-Host "[OK] Acceso directo 'Media Manager' instalado en el Menu Inicio y Escritorio." -ForegroundColor Green
 
 # Eliminar media-manager.ps1 para evitar que la ExecutionPolicy de PowerShell bloquee la ejecucion
 $ps1Wrapper = Join-Path $localBin "media-manager.ps1"
@@ -336,7 +346,9 @@ Write-Host "Las descargas provisionales se guardaran en: $downloadsPath" -Foregr
 Write-Host "Las peliculas y series organizadas iran a:   $mediaPath" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Comandos disponibles:" -ForegroundColor Yellow
-Write-Host "  media-manager                 -> Menu interactivo principal"
+Write-Host "  media-manager                 -> Menu interactivo principal (TUI)"
+Write-Host "  media-manager gui             -> Abrir aplicacion de escritorio (Flutter GUI)"
+Write-Host "  media-manager-gui             -> Lanzador directo de la app de escritorio"
 Write-Host "  media-manager search <nombre> -> Buscar torrents y descargarlos"
 Write-Host "  media-manager status          -> Ver descargas activas"
 Write-Host "  media-manager organize        -> Organizar descargas manualmente"

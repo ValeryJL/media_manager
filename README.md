@@ -1,10 +1,15 @@
-# Media Manager CLI
+# Media Manager (CLI + Desktop GUI con Flutter)
 
-Herramienta de línea de comandos en Python para buscar, descargar (vía `aria2c` en segundo plano) y organizar automáticamente películas y series.
+Herramienta multiplataforma (Windows, Linux y macOS) en Python y **Flutter (Flet)** para buscar, descargar (vía `aria2c` en segundo plano) y organizar automáticamente películas y series tanto desde una **Aplicación de Escritorio Nativa (GUI)** como desde su **Interfaz de Terminal Interactiva (TUI/CLI)**.
 
 ## Instalación
 
-El instalador permite elegir entre:
+El instalador configura el servicio en segundo plano `aria2c`, los comandos de consola (`media-manager`, `media-manager-gui`) y **registra automáticamente la Aplicación de Escritorio en el sistema operativo**:
+- **Windows:** Crea el acceso directo **Media Manager** en el **Menú Inicio** y en el **Escritorio** con su ícono personalizado, ejecutándose sin ventana de consola (`pythonw.exe`).
+- **Linux:** Registra el lanzador `/usr/share/applications/media-manager.desktop` (o `~/.local/share/applications/media-manager.desktop`).
+- **macOS:** Crea el paquete `/Applications/Media Manager.app` (o `~/Applications/Media Manager.app`).
+
+Permite elegir entre:
 1. **Solo para el usuario actual** (`$HOME` / `%USERPROFILE%`)
 2. **Para todos los usuarios** (`C:\Users\Public` en Windows, `/Users/Shared` en macOS o `/srv/public` en Linux)
 
@@ -54,7 +59,26 @@ media_path: ~/Media
 
 ## Uso
 
-El ejecutable se llama `media-manager`. Al ejecutarlo sin argumentos (`media-manager`), abre el **Panel Principal Interactivo** con métricas en tiempo real del daemon `aria2c` y acceso rápido por teclado (`↑/↓`, `1-6`, `B` Buscar, `V` Visor de descargas, `M` Agregar magnet, `O` Organizar, `C` Limpiar completados).
+Puedes usar **Media Manager** como **Aplicación de Escritorio (GUI con Flutter)** o desde la **Terminal (TUI/CLI)**. Ambas comparten el mismo motor `aria2c` en segundo plano en tiempo real.
+
+### 🖥️ Aplicación de Escritorio (GUI con Flutter)
+Puedes abrirla desde el ícono **Media Manager** en el **Menú Inicio / Escritorio / Aplicaciones**, o desde la terminal con:
+```bash
+media-manager gui
+# o directamente:
+media-manager-gui
+```
+La aplicación de escritorio cuenta con 4 secciones integradas en una interfaz oscura Material 3:
+1. **📊 Descargas:** Tarjetas KPI en vivo (Activas, En pausa, Completadas, Velocidad global), barra para pegar enlaces Magnet/URL, selector nativo de archivos `.torrent`, y tarjetas de progreso en tiempo real con botones para **Pausar/Reanudar**, **Eliminar** (con confirmación y limpieza de archivos parciales), **Clear Completados** y **Organizar Ahora**.
+2. **🔍 Buscador:** Búsqueda asíncrona de películas y series con indicadores visuales de salud de seeds (`Excelente`, `Buena`, `Baja`), selector de ordenamiento (**Seeders**, **Tamaño**, **Nombre**), descarga en 1 clic o casillas de selección múltiple (`Descargar Marcados`).
+3. **🎞 Biblioteca:** Explorador visual de tu colección organizada en `Movies/` y `Shows/` con conteo de temporadas, episodios, tamaños y botón para abrir cada carpeta en el explorador del sistema.
+4. **⚙️ Ajustes:** Selector gráfico de carpetas (`download_path` y `media_path`), estado y reinicio del daemon `aria2c`, y botón para reinstalar los accesos directos del sistema (`media-manager gui --install-shortcut`).
+
+---
+
+### ⌨️ Uso desde la Terminal (TUI / CLI)
+
+El ejecutable se llama `media-manager`. Al ejecutarlo sin argumentos (`media-manager`), abre el **Panel Principal Interactivo** con métricas en tiempo real del daemon `aria2c` y acceso rápido por teclado (`↑/↓`, `1-7`, `B` Buscar, `V` Visor de descargas, `M` Agregar magnet, `O` Organizar, `C` Limpiar completados, `G` Abrir App GUI).
 
 También proporciona los siguientes comandos directos:
 

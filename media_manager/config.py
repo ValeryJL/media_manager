@@ -89,9 +89,10 @@ def load_config(config_path: str = None) -> dict:
     config = default_config.copy()
     config.update(user_config)
 
-    # Expand vars like $HOME, ~, $PUBLIC and %USERPROFILE% / %PUBLIC%
+    # Expand vars like $HOME, ~, $PUBLIC and %USERPROFILE% / %PUBLIC% for path keys
     public_dir = get_public_dir()
-    for k, v in config.items():
+    for k in ("download_path", "media_path"):
+        v = config.get(k)
         if isinstance(v, str):
             expanded = v
             if "$PUBLIC" in expanded:

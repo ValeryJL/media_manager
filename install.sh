@@ -115,13 +115,23 @@ echo "[6/6] Configuring symlinks and startup service..."
 BIN_DIR="$BASE_DIR/.local/bin"
 mkdir -p "$BIN_DIR"
 ln -sf "$VENV_DIR/bin/media-manager" "$BIN_DIR/media-manager"
+ln -sf "$VENV_DIR/bin/media-manager-gui" "$BIN_DIR/media-manager-gui"
 ln -sf "$VENV_DIR/bin/pirate-get" "$BIN_DIR/pirate-get"
 ln -sf "$VENV_DIR/bin/aria2p" "$BIN_DIR/aria2p"
+
+# Install native OS desktop launcher (.desktop on Linux, .app bundle on macOS)
+echo "Installing native Desktop GUI launcher (Flutter)..."
+if [ "$INSTALL_ALL_USERS" = "true" ]; then
+    MEDIA_MANAGER_HOME="$BASE_DIR" "$VENV_DIR/bin/python" -c "from media_manager.gui import install_desktop_shortcut; install_desktop_shortcut(True)" || true
+else
+    MEDIA_MANAGER_HOME="$BASE_DIR" "$VENV_DIR/bin/python" -c "from media_manager.gui import install_desktop_shortcut; install_desktop_shortcut(False)" || true
+fi
 
 if [ "$INSTALL_ALL_USERS" = "true" ]; then
     if [ -d "/usr/local/bin" ]; then
         echo "Adding global symlinks to /usr/local/bin..."
         sudo ln -sf "$VENV_DIR/bin/media-manager" "/usr/local/bin/media-manager" || true
+        sudo ln -sf "$VENV_DIR/bin/media-manager-gui" "/usr/local/bin/media-manager-gui" || true
         sudo ln -sf "$VENV_DIR/bin/pirate-get" "/usr/local/bin/pirate-get" || true
         sudo ln -sf "$VENV_DIR/bin/aria2p" "/usr/local/bin/aria2p" || true
     fi
